@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   build:
+    # fork: upstream-only, it needs Discord/Telegram secrets this repo does not have
+    if: github.repository == 'rebelonion/Dantotsu'
     runs-on: ubuntu-latest
     permissions:
       contents: write
