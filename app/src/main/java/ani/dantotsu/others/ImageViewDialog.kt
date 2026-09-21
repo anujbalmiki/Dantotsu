@@ -13,6 +13,7 @@ import ani.dantotsu.FileUrl
 import ani.dantotsu.R
 import ani.dantotsu.databinding.BottomSheetImageBinding
 import ani.dantotsu.media.manga.MangaCache
+import ani.dantotsu.media.manga.decodeSampled
 import ani.dantotsu.media.manga.mangareader.BaseImageAdapter.Companion.loadBitmap
 import ani.dantotsu.media.manga.mangareader.BaseImageAdapter.Companion.loadBitmapOld
 import ani.dantotsu.media.manga.mangareader.BaseImageAdapter.Companion.mergeBitmap
@@ -94,10 +95,10 @@ class ImageViewDialog : BottomSheetDialogFragment() {
             var bitmap = if (preloaded != null && !preloaded.isRecycled) {
                 preloaded
             } else {
-                mangaCache?.getBitmap(image.url)
+                mangaCache?.getBytes(image.url)?.let { decodeSampled(it) }
             }
 
-            var bitmap2 = if (image2 != null) mangaCache?.getBitmap(image2.url) else null
+            var bitmap2 = if (image2 != null) mangaCache?.getBytes(image2.url)?.let { decodeSampled(it) } else null
 
             if (bitmap == null) {
                 bitmap = context.loadBitmap(image, trans1 ?: listOf())

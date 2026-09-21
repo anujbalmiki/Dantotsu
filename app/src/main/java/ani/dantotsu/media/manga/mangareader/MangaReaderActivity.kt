@@ -1760,6 +1760,9 @@ class MangaReaderActivity : AppCompatActivity() {
             PrefManager.setCustomVal("${media.id}_${chapter.number}_max", maxChapterPage)
             cleanChapNum?.let { PrefManager.setCustomVal("${media.id}_${it}_max", maxChapterPage) }
 
+            // Adapter updates are illegal from inside a scroll callback, so trim on the next frame.
+            binding.mangaReaderRecycler.post { trimReaderWindow() }
+
             if (totalPages > 1) {
                 binding.mangaReaderSlider.visibility = View.VISIBLE
                 binding.mangaReaderSlider.updateRangeAndValue(
@@ -1773,6 +1776,52 @@ class MangaReaderActivity : AppCompatActivity() {
         }
 
         updatePageNumber(pageNum.toLong())
+    }
+
+    /**
+     * Drop chapters two or more away from the one being read. The reader list otherwise only ever
+     * grows, which is what makes scrolling stutter after a long session.
+     */
+    private fun trimReaderWindow() {
+        val adapter = imageAdapter ?: return
+        if (!::chapter.isInitialized) return
+        val key = chapter.uniqueNumber()
+
+        if (defaultSettings.layout == PAGED) {
+            val current = binding.mangaReaderPager.currentItem
+            val removedBefore = adapter.trimToWindow(key)
+            if (removedBefore > 0) {
+                binding.mangaReaderPager.setCurrentItem(
+                    (current - removedBefore).coerceAtLeast(0), false
+                )
+            }
+            return
+        }
+
+        val lm = binding.mangaReaderRecycler.layoutManager as? LinearLayoutManager
+        val firstPos = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+        val anchor = if (firstPos != RecyclerView.NO_POSITION) lm?.findViewByPosition(firstPos) else null
+        val offset = if (defaultSettings.direction == LEFT_TO_RIGHT || defaultSettings.direction == RIGHT_TO_LEFT) {
+            anchor?.left ?: 0
+        } else {
+            anchor?.top ?: 0
+        }
+        val removedBefore = adapter.trimToWindow(key)
+        if (removedBefore > 0 && lm != null && firstPos != RecyclerView.NO_POSITION) {
+            lm.scrollToPositionWithOffset((firstPos - removedBefore).coerceAtLeast(0), offset)
+        }
+    }
+
+    /** Android asking for memory back used to be ignored entirely. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            mangaCache.clearBytes()
+            try {
+                Glide.get(this).trimMemory(level)
+            } catch (_: Exception) {
+            }
+        }
     }
 
     fun loadNextChapter() {
