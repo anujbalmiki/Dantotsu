@@ -19,18 +19,24 @@ import ani.dantotsu.GesturesListener
 import ani.dantotsu.R
 import ani.dantotsu.databinding.ItemChapterTransitionBinding
 import ani.dantotsu.media.manga.MangaCache
+import ani.dantotsu.media.manga.readerMaxSize
 import ani.dantotsu.media.manga.MangaChapter
 import ani.dantotsu.px
 import ani.dantotsu.settings.CurrentReaderSettings
 import ani.dantotsu.tryWithSuspend
 import com.alexvasilkov.gestures.views.GestureFrameLayout
 import com.bumptech.glide.Glide
+import com.bumptech.glide.RequestBuilder
+import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.model.GlideUrl
 import com.bumptech.glide.load.resource.bitmap.BitmapTransformation
+import com.bumptech.glide.load.resource.bitmap.DownsampleStrategy
 import ani.dantotsu.parsers.MangaImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import uy.kohesive.injekt.api.get
 import java.io.File
@@ -43,6 +49,28 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.sin
+
+/**
+ * Page loads run blocking OkHttp plus a full-page decode on Dispatchers.IO, which has 64 threads.
+ * Fast scrolling used to start dozens of those at once and exhaust the 512 MB heap. Three at a
+ * time keeps the pipeline full without ever holding more than a few decoded pages.
+ *
+ * ponytail: one global gate; make it per-RecyclerView only if two readers ever run side by side.
+ */
+private val decodeGate = Semaphore(3)
+
+/**
+ * Reader decodes: never keep the bitmap in the Glide memory cache (we call recycle() on these
+ * ourselves), decode as RGB_565, and cap the result at screen size.
+ */
+private fun RequestBuilder<Bitmap>.readerDecodeOptions(disk: DiskCacheStrategy): RequestBuilder<Bitmap> {
+    val (maxW, maxH) = readerMaxSize()
+    return skipMemoryCache(true)
+        .diskCacheStrategy(disk)
+        .format(DecodeFormat.PREFER_RGB_565)
+        .downsample(DownsampleStrategy.AT_MOST)
+        .override(maxW, maxH)
+}
 
 sealed class ReaderItem {
     data class Page(
@@ -108,6 +136,52 @@ abstract class BaseImageAdapter(
     open fun appendChapter(nextChap: MangaChapter, afterNextChap: MangaChapter? = null) {}
 
     open fun prependChapter(prevChap: MangaChapter, beforePrevChap: MangaChapter? = null): Int = 0
+
+    /**
+     * Continuous scroll appends a chapter every time a boundary is crossed and never drops one, so
+     * a long session ends up with thousands of items and every layout pass walks the lot. Keep
+     * [radius] chapters either side of [currentKey] and drop the rest.
+     *
+     * Returns how many items were removed from the front, so the caller can re-anchor the scroll.
+     */
+    fun trimToWindow(currentKey: String, radius: Int = 1): Int {
+        val keys = ArrayList<String>()
+        items.forEach { item ->
+            chapterKeyOf(item)?.let { if (keys.lastOrNull() != it) keys.add(it) }
+        }
+        val idx = keys.indexOf(currentKey)
+        if (idx == -1 || keys.size <= radius * 2 + 1) return 0
+
+        val keep = keys.subList(
+            (idx - radius).coerceAtLeast(0),
+            (idx + radius + 1).coerceAtMost(keys.size)
+        ).toHashSet()
+
+        val first = items.indexOfFirst { chapterKeyOf(it)?.let(keep::contains) == true }
+        val last = items.indexOfLast { chapterKeyOf(it)?.let(keep::contains) == true }
+        if (first == -1 || last == -1) return 0
+
+        // hold on to the transition sitting on either side of the window
+        val start = (first - 1).coerceAtLeast(0)
+        val end = (last + 1).coerceAtMost(items.size - 1)
+
+        if (end < items.size - 1) {
+            val count = items.size - 1 - end
+            repeat(count) { items.removeAt(items.size - 1) }
+            notifyItemRangeRemoved(end + 1, count)
+        }
+        if (start > 0) {
+            repeat(start) { items.removeAt(0) }
+            notifyItemRangeRemoved(0, start)
+        }
+        return start
+    }
+
+    private fun chapterKeyOf(item: ReaderItem): String? = when (item) {
+        is ReaderItem.Page -> item.chapter.uniqueNumber()
+        is ReaderItem.DualPage -> item.chapter.uniqueNumber()
+        is ReaderItem.Transition -> null
+    }
 
     private val loadJobs = java.util.concurrent.ConcurrentHashMap<RecyclerView.ViewHolder, kotlinx.coroutines.Job>()
 
@@ -360,6 +434,7 @@ abstract class BaseImageAdapter(
         ): Bitmap? {
             return tryWithSuspend {
                 val mangaCache = uy.kohesive.injekt.Injekt.get<MangaCache>()
+                decodeGate.withPermit {
                 withContext(Dispatchers.IO) {
                     val localFile = File(link.url)
                     val baseBitmap = when {
@@ -368,8 +443,7 @@ abstract class BaseImageAdapter(
                                 Glide.with(this@loadBitmap)
                                     .asBitmap()
                                     .load(localFile.absoluteFile)
-                                    .skipMemoryCache(true)
-                                    .diskCacheStrategy(DiskCacheStrategy.NONE)
+                                    .readerDecodeOptions(DiskCacheStrategy.NONE)
                                     .submit()
                                     .get()
                             } catch (_: Exception) { null }
@@ -382,8 +456,7 @@ abstract class BaseImageAdapter(
                                 Glide.with(this@loadBitmap)
                                     .asBitmap()
                                     .load(Uri.parse(link.url))
-                                    .skipMemoryCache(true)
-                                    .diskCacheStrategy(DiskCacheStrategy.NONE)
+                                    .readerDecodeOptions(DiskCacheStrategy.NONE)
                                     .submit()
                                     .get()
                             } catch (_: Exception) { null }
@@ -395,15 +468,16 @@ abstract class BaseImageAdapter(
                             val imageData = mangaCache.get(link.url)
                             val cachedBitmap = imageData?.fetchAndProcessImage(
                                 imageData.page,
-                                imageData.source
+                                imageData.source,
+                                mangaCache
                             )
                             cachedBitmap ?: run {
                                 val glideBitmap = try {
                                     Glide.with(this@loadBitmap)
                                         .asBitmap()
                                         .load(GlideUrl(link.url) { link.headers })
-                                        .skipMemoryCache(true)
-                                        .diskCacheStrategy(DiskCacheStrategy.NONE)
+                                        // DATA, not NONE: a re-bind should hit the disk, not the network.
+                                        .readerDecodeOptions(DiskCacheStrategy.DATA)
                                         .submit()
                                         .get()
                                 } catch (_: Exception) {
@@ -434,8 +508,7 @@ abstract class BaseImageAdapter(
                         val transformed = Glide.with(this@loadBitmap)
                             .asBitmap()
                             .load(baseBitmap)
-                            .skipMemoryCache(true)
-                            .diskCacheStrategy(DiskCacheStrategy.NONE)
+                            .readerDecodeOptions(DiskCacheStrategy.NONE)
                             .transform(*transforms.toTypedArray())
                             .submit()
                             .get()
@@ -444,6 +517,7 @@ abstract class BaseImageAdapter(
                         }
                         transformed
                     }
+                }
                 }
             }
         }
@@ -477,7 +551,22 @@ abstract class BaseImageAdapter(
                         val bitmap = Bitmap.createBitmap(res.width, res.height, Bitmap.Config.ARGB_8888)
                         res.image.rewind()
                         bitmap.copyPixelsFromBuffer(res.image)
-                        bitmap
+                        // libvips hands back ARGB_8888 at full resolution; a long strip at that size
+                        // is tens of MB. Bring it down to the ceiling the other decoders use.
+                        val (maxW, maxH) = readerMaxSize()
+                        if (bitmap.width > maxW || bitmap.height > maxH) {
+                            val ratio = minOf(maxW.toFloat() / bitmap.width, maxH.toFloat() / bitmap.height)
+                            val scaled = Bitmap.createScaledBitmap(
+                                bitmap,
+                                (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                                (bitmap.height * ratio).toInt().coerceAtLeast(1),
+                                true
+                            )
+                            if (scaled !== bitmap) bitmap.recycle()
+                            scaled
+                        } else {
+                            bitmap
+                        }
                     } else {
                         null
                     }

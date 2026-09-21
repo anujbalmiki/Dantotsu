@@ -66,6 +66,7 @@ import ani.dantotsu.util.customAlertDialog
 import com.google.android.material.appbar.AppBarLayout
 import eu.kanade.tachiyomi.extension.manga.model.MangaExtension
 import eu.kanade.tachiyomi.source.ConfigurableSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -280,7 +281,7 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
     }
 
     fun multiDownload(n: Int) {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             // Get the last viewed chapter
             val selected = media.userProgress ?: 0
             val chapters = media.manga?.chapters?.values?.toList()
@@ -298,11 +299,17 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
             for (chapter in chaptersToDownload) {
                 try {
                     downloadChapterSequentially(chapter)
+                } catch (e: CancellationException) {
+                    // Leaving the screen cancels this job; the fragment is already detached,
+                    // so touching a Context here would blow up instead of just stopping.
+                    throw e
                 } catch (e: Exception) {
-                    Toast.makeText(requireContext(), "Failed to download chapter: ${chapter.title}", Toast.LENGTH_SHORT).show()
+                    val ctx = context ?: return@launch
+                    Toast.makeText(ctx, "Failed to download chapter: ${chapter.title}", Toast.LENGTH_SHORT).show()
                 }
             }
-            Toast.makeText(requireContext(), "All downloads completed!", Toast.LENGTH_SHORT).show()
+            val ctx = context ?: return@launch
+            Toast.makeText(ctx, "All downloads completed!", Toast.LENGTH_SHORT).show()
         }
     }
     private suspend fun downloadChapterSequentially(chapter: MangaChapter) {
