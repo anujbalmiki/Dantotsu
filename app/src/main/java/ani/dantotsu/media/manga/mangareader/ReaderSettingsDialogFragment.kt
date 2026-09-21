@@ -407,7 +407,7 @@ class ReaderSettingsDialogFragment : BottomSheetDialogFragment() {
                 settings.dataSaverMode = index
                 binding.dataSaverModeText.text = dataSaverModeNames[index]
                 PrefManager.setVal(PrefName.DataSaverMode, index)
-                try { Injekt.get<MangaCache>().clearBitmaps() } catch (_: Exception) {}
+                try { Injekt.get<MangaCache>().clearBytes() } catch (_: Exception) {}
                 activity.applySettings()
             }
         }
@@ -425,7 +425,7 @@ class ReaderSettingsDialogFragment : BottomSheetDialogFragment() {
                 settings.dataSaverImageQuality = q
                 PrefManager.setVal(PrefName.DataSaverImageQuality, q)
                 binding.dataSaverQualityLabel.text = "${getString(R.string.data_saver_quality)} ($q%)"
-                try { Injekt.get<MangaCache>().clearBitmaps() } catch (_: Exception) {}
+                try { Injekt.get<MangaCache>().clearBytes() } catch (_: Exception) {}
                 activity.applySettings()
             }
         })
@@ -433,21 +433,21 @@ class ReaderSettingsDialogFragment : BottomSheetDialogFragment() {
         binding.dataSaverIgnoreJpeg.setOnCheckedChangeListener { _, isChecked ->
             settings.dataSaverIgnoreJpeg = isChecked
             PrefManager.setVal(PrefName.DataSaverIgnoreJpeg, isChecked)
-            try { Injekt.get<MangaCache>().clearBitmaps() } catch (_: Exception) {}
+            try { Injekt.get<MangaCache>().clearBytes() } catch (_: Exception) {}
             activity.applySettings()
         }
 
         binding.dataSaverIgnoreGif.setOnCheckedChangeListener { _, isChecked ->
             settings.dataSaverIgnoreGif = isChecked
             PrefManager.setVal(PrefName.DataSaverIgnoreGif, isChecked)
-            try { Injekt.get<MangaCache>().clearBitmaps() } catch (_: Exception) {}
+            try { Injekt.get<MangaCache>().clearBytes() } catch (_: Exception) {}
             activity.applySettings()
         }
 
         binding.dataSaverImageFormat.setOnCheckedChangeListener { _, isChecked ->
             settings.dataSaverImageFormatJpeg = isChecked
             PrefManager.setVal(PrefName.DataSaverImageFormatJpeg, isChecked)
-            try { Injekt.get<MangaCache>().clearBitmaps() } catch (_: Exception) {}
+            try { Injekt.get<MangaCache>().clearBytes() } catch (_: Exception) {}
             activity.applySettings()
         }
     }

@@ -2,6 +2,7 @@ package ani.dantotsu.media.manga
 
 import android.content.ContentResolver
 import android.content.ContentValues
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -27,38 +28,32 @@ data class ImageData(
 ) {
     suspend fun fetchAndProcessImage(
         page: Page,
-        httpSource: HttpSource
+        httpSource: HttpSource,
+        cache: MangaCache? = null
     ): Bitmap? {
         return withContext(Dispatchers.IO) {
             try {
-                val dataSaver = createDataSaver()
-                val compressedUrl = dataSaver.compress(page.imageUrl ?: "")
-                
-                val originalUrl = page.imageUrl
-                var bitmap: Bitmap? = null
-                var success = false
+                val originalUrl = page.imageUrl ?: ""
 
-                val decodeOptions = BitmapFactory.Options().apply {
-                    inPreferredConfig = Bitmap.Config.RGB_565
+                // Re-binding a page used to re-download it every single time, which is what
+                // kept the OkHttp dispatcher (and the heap) permanently busy while scrolling.
+                cache?.getBytes(originalUrl)?.let { cached ->
+                    decodeSampled(cached)?.let { return@withContext it }
                 }
+
+                val dataSaver = createDataSaver()
+                val compressedUrl = dataSaver.compress(originalUrl)
+                var bytes: ByteArray? = null
 
                 if (compressedUrl != originalUrl) {
                     try {
                         page.imageUrl = compressedUrl
-                        val response = httpSource.getImage(page)
-                        Logger.log("DataSaver Response: ${response.code} - ${response.message}")
-                        if (response.isSuccessful) {
-                            bitmap = response.use {
-                                it.body.byteStream().use { inputStream ->
-                                    BitmapFactory.decodeStream(inputStream, null, decodeOptions)
-                                }
-                            }
-                            if (bitmap != null) {
-                                success = true
-                            }
-                        } else {
-                            response.close()
+                        httpSource.getImage(page).use { response ->
+                            Logger.log("DataSaver Response: ${response.code} - ${response.message}")
+                            if (response.isSuccessful) bytes = response.body.bytes()
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         Logger.log("DataSaver failed, falling back to original: ${e.message}")
                     } finally {
@@ -66,24 +61,19 @@ data class ImageData(
                     }
                 }
 
-                if (!success) {
+                if (bytes == null) {
                     if (compressedUrl != originalUrl) {
                         Logger.log("DataSaver failed or was blocked by Cloudflare; falling back to original URL: $originalUrl")
                     }
-                    val response = httpSource.getImage(page)
-                    Logger.log("Response: ${response.code} - ${response.message}")
-                    if (response.isSuccessful) {
-                        bitmap = response.use {
-                            it.body.byteStream().use { inputStream ->
-                                BitmapFactory.decodeStream(inputStream, null, decodeOptions)
-                            }
-                        }
-                    } else {
-                        response.close()
+                    httpSource.getImage(page).use { response ->
+                        Logger.log("Response: ${response.code} - ${response.message}")
+                        if (response.isSuccessful) bytes = response.body.bytes()
                     }
                 }
 
-                return@withContext bitmap
+                val data = bytes ?: return@withContext null
+                cache?.putBytes(originalUrl, data)
+                return@withContext decodeSampled(data)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -91,6 +81,53 @@ data class ImageData(
                 return@withContext null
             }
         }
+    }
+}
+
+/** Anything above this many pixels is more than any phone screen can show. ~32 MB at RGB_565. */
+private const val MAX_BITMAP_PIXELS = 16_000_000L
+
+/**
+ * Power-of-two subsample factor that brings a [width]x[height] image down to roughly twice the
+ * screen width (enough headroom to zoom) while staying under [MAX_BITMAP_PIXELS].
+ * Without this, long webtoon strips were decoded at full resolution and exhausted the heap.
+ */
+fun calcInSampleSize(width: Int, height: Int): Int {
+    val targetWidth = (Resources.getSystem().displayMetrics.widthPixels * 2).coerceAtLeast(1080)
+    var sample = 1
+    while (sample < 32) {
+        val w = width / sample
+        val h = height / sample
+        if (w <= targetWidth && w.toLong() * h.toLong() <= MAX_BITMAP_PIXELS) break
+        sample *= 2
+    }
+    return sample
+}
+
+/**
+ * Upper bound for a decoded reader page: twice the screen width, and whatever height keeps the
+ * total under [MAX_BITMAP_PIXELS]. Used to cap Glide decodes the same way [calcInSampleSize]
+ * caps the BitmapFactory ones.
+ */
+fun readerMaxSize(): Pair<Int, Int> {
+    val w = (Resources.getSystem().displayMetrics.widthPixels * 2).coerceAtLeast(1080)
+    return w to (MAX_BITMAP_PIXELS / w).toInt()
+}
+
+/** Decode compressed image [bytes] subsampled to screen size, in RGB_565 (half the bytes of ARGB_8888). */
+fun decodeSampled(bytes: ByteArray): Bitmap? {
+    return try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.RGB_565
+            inSampleSize = calcInSampleSize(bounds.outWidth, bounds.outHeight)
+        })
+    } catch (_: OutOfMemoryError) {
+        null
+    } catch (_: Exception) {
+        null
     }
 }
 
@@ -149,10 +186,13 @@ fun saveImage(
 class MangaCache {
     private val maxEntries = 500
     private val cache = LruCache<String, ImageData>(maxEntries)
-    private val cacheSizeKb = ((Runtime.getRuntime().maxMemory() / 1024) / 8).toInt().coerceIn(32 * 1024, 96 * 1024)
-    private val bitmapCache = object : LruCache<String, Bitmap>(cacheSizeKb) {
-        override fun sizeOf(key: String, value: Bitmap): Int {
-            return (value.byteCount / 1024).coerceAtLeast(1)
+    // Compressed source bytes, not decoded bitmaps. A page is a few hundred KB here instead of
+    // tens of MB, and nothing ever calls recycle() on a ByteArray, so it is safe to hand the same
+    // entry to several callers.
+    private val cacheSizeKb = ((Runtime.getRuntime().maxMemory() / 1024) / 16).toInt().coerceIn(16 * 1024, 48 * 1024)
+    private val byteCache = object : LruCache<String, ByteArray>(cacheSizeKb) {
+        override fun sizeOf(key: String, value: ByteArray): Int {
+            return (value.size / 1024).coerceAtLeast(1)
         }
     }
 
@@ -167,26 +207,26 @@ class MangaCache {
     @Synchronized
     fun remove(key: String) {
         cache.remove(key)
-        bitmapCache.remove(key)
+        byteCache.remove(key)
     }
 
     @Synchronized
     fun clear() {
         cache.evictAll()
-        bitmapCache.evictAll()
+        byteCache.evictAll()
     }
 
     @Synchronized
-    fun putBitmap(key: String, bitmap: Bitmap) {
-        bitmapCache.put(key, bitmap)
+    fun putBytes(key: String, bytes: ByteArray) {
+        if (key.isNotEmpty()) byteCache.put(key, bytes)
     }
 
     @Synchronized
-    fun getBitmap(key: String): Bitmap? = bitmapCache.get(key)
+    fun getBytes(key: String): ByteArray? = if (key.isEmpty()) null else byteCache.get(key)
 
     @Synchronized
-    fun clearBitmaps() {
-        bitmapCache.evictAll()
+    fun clearBytes() {
+        byteCache.evictAll()
     }
 
     fun size(): Int = cache.size()
