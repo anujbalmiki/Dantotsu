@@ -71,6 +71,22 @@ class App : Application(), GraphProvider<AppGraph> {
     val mFTActivityLifecycleCallbacks = FTActivityLifecycleCallbacks()
 
     @OptIn(DelicateCoroutinesApi::class)
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        try {
+            com.bumptech.glide.Glide.get(this).trimMemory(level)
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        try {
+            com.bumptech.glide.Glide.get(this).clearMemory()
+        } catch (_: Exception) {
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         PrefManager.init(this)
