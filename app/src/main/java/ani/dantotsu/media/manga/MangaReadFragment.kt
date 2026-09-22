@@ -43,6 +43,7 @@ import ani.dantotsu.media.Media
 import ani.dantotsu.media.MediaDetailsActivity
 import ani.dantotsu.logError
 import ani.dantotsu.media.DownloadSelectionMode
+import ani.dantotsu.media.showDownloadManagerDialog
 import ani.dantotsu.media.MediaDetailsViewModel
 import ani.dantotsu.media.MediaNameAdapter
 import ani.dantotsu.media.MediaType
@@ -556,6 +557,15 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
         chapterAdapter.beginSelection(chapter)
         val mode = DownloadSelectionMode(chapterSelectionTarget)
         if (mode.start()) chapterSelection = mode else chapterAdapter.endSelection()
+    }
+
+    /** Header download button: range in, download or delete out, or hand off to the toolbar. */
+    fun showDownloadManager() {
+        if (media.format == "LOCAL") return
+        showDownloadManagerDialog(chapterSelectionTarget) { from, to ->
+            startChapterSelection()
+            chapterAdapter.selectNumberRange(from, to)
+        }
     }
 
     private val chapterSelectionTarget = object : DownloadSelectionMode.Target {
