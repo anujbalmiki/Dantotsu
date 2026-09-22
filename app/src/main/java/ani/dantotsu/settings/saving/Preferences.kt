@@ -212,6 +212,7 @@ enum class PrefName(val data: Pref) {
     WebGpuRenderer(Pref(Location.Reader, Boolean::class, false)),
     PagePreloadAmount(Pref(Location.Reader, Int::class, 3)),
     AlwaysShowChapterTransition(Pref(Location.Reader, Boolean::class, false)),
+    ContinuousChapters(Pref(Location.Reader, Boolean::class, false)),
     
     // Data Saver
     DataSaverMode(Pref(Location.Reader, Int::class, 0)), // 0=NONE, 1=BANDWIDTH_HERO, 2=WSRV_NL
