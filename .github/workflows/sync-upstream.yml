@@ -1,0 +1,210 @@
+name: Sync upstream
+
+# Rebases the fork's patches onto the latest upstream dev, then builds and releases the result.
+# Upstream is Gitea, not GitHub, so there is no fork relationship and no PR to merge: the patch
+# commits on this branch are simply replayed on top of whatever upstream's dev head is.
+#
+# ponytail: the build and release steps are copied from fork-build.yml rather than reused via
+# workflow_call. A push made with GITHUB_TOKEN does not trigger other workflows, and calling a
+# reusable workflow would check out the caller's pre-rebase SHA. Duplicating ~30 lines is the
+# smaller problem. If a third workflow ever needs the same steps, extract a composite action.
+
+on:
+  schedule:
+    # 03:10 UTC daily. GitHub disables cron on repos with 60 days of no activity.
+    - cron: '10 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Build and release even if upstream has not moved'
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  PATCH_BRANCH: fix/reader-oom-and-detach
+  UPSTREAM_URL: https://git.rebelonion.dev/rebelonion/Dantotsu.git
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v5
+        with:
+          ref: fix/reader-oom-and-detach
+          fetch-depth: 0
+
+      - name: Rebase onto upstream dev
+        id: rebase
+        run: |
+          set -o pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM_URL"
+          git fetch --no-tags upstream dev
+
+          UP=$(git rev-parse upstream/dev)
+          # Before the rebase, this branch sits on the upstream commit it was last synced to.
+          PREV=$(git merge-base HEAD upstream/dev)
+          echo "upstream_sha=$UP" >> "$GITHUB_OUTPUT"
+          echo "upstream_short=${UP:0:8}" >> "$GITHUB_OUTPUT"
+          echo "prev_base=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Upstream dev is at $UP, last synced at $PREV"
+
+          if git merge-base --is-ancestor "$UP" HEAD; then
+            echo "Already contains upstream $UP, nothing to rebase."
+            echo "result=unchanged" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # --empty=drop so a patch upstream has since adopted disappears instead of
+          # becoming an empty commit that sticks around forever.
+          if git rebase --empty=drop "$UP"; then
+            echo "result=rebased" >> "$GITHUB_OUTPUT"
+          else
+            CONFLICTS=$(git diff --name-only --diff-filter=U | sort -u)
+            {
+              echo 'conflicts<<CONFLICT_EOF'
+              echo "$CONFLICTS"
+              echo 'CONFLICT_EOF'
+            } >> "$GITHUB_OUTPUT"
+            git rebase --abort || true
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open an issue on conflict
+        if: steps.rebase.outputs.result == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UP_SHORT: ${{ steps.rebase.outputs.upstream_short }}
+          CONFLICTS: ${{ steps.rebase.outputs.conflicts }}
+        run: |
+          cat > body.md <<'HEADER'
+          The nightly rebase onto upstream `dev` hit a conflict, so nothing was pushed and no build ran. The branch is untouched; the last good build is still the newest release.
+          HEADER
+          {
+            echo
+            echo "Upstream head: \`$UP_SHORT\`"
+            echo
+            echo 'Conflicting files:'
+            echo
+            echo '```'
+            echo "$CONFLICTS"
+            echo '```'
+            echo
+            echo 'To resolve locally:'
+            echo
+            echo '```bash'
+            echo "git fetch upstream dev && git rebase upstream/dev"
+            echo '```'
+          } >> body.md
+
+          # One open issue at a time; reuse it instead of filing a new one every night.
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --label upstream-conflict --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh label create upstream-conflict --repo "$GITHUB_REPOSITORY" \
+              --color B60205 --description "Rebase onto upstream dev needs manual resolution" || true
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Upstream rebase conflict at $UP_SHORT" \
+              --label upstream-conflict \
+              --body-file body.md
+          fi
+          exit 1
+
+      - name: Push rebased branch
+        if: steps.rebase.outputs.result == 'rebased'
+        run: git push --force-with-lease origin "HEAD:$PATCH_BRANCH"
+
+      - name: Setup JDK 21
+        if: steps.rebase.outputs.result == 'rebased' || inputs.force_build
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Cache Gradle dependencies
+        if: steps.rebase.outputs.result == 'rebased' || inputs.force_build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: v1-${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            v1-${{ runner.os }}-gradle-
+
+      - name: Decode keystore
+        if: steps.rebase.outputs.result == 'rebased' || inputs.force_build
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+        run: |
+          if [ -n "$KEYSTORE_FILE" ]; then
+            echo "$KEYSTORE_FILE" | base64 -d > "$GITHUB_WORKSPACE/key.keystore"
+          fi
+
+      - name: Build googleAlpha
+        if: steps.rebase.outputs.result == 'rebased' || inputs.force_build
+        run: |
+          chmod +x ./gradlew
+          if [ -s "$GITHUB_WORKSPACE/key.keystore" ]; then
+            echo "Signing with the repository keystore"
+            ./gradlew assembleGoogleAlpha --no-daemon --stacktrace \
+              -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/key.keystore \
+              -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
+              -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
+              -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}"
+          else
+            echo "::error::No keystore secret set. Refusing to publish a release signed with a throwaway debug key, because it would not install over the previous build."
+            exit 1
+          fi
+
+      - name: Publish release
+        if: steps.rebase.outputs.result == 'rebased' || inputs.force_build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UP_SHORT: ${{ steps.rebase.outputs.upstream_short }}
+          PREV_BASE: ${{ steps.rebase.outputs.prev_base }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          TAG="sync-$(date -u +%Y%m%d)-${SHA:0:7}"
+          APKS=app/build/outputs/apk/google/alpha
+          sha256sum "$APKS"/app-google-arm64-v8a-alpha.apk
+
+          cat > notes.md <<HEADER
+          Reader fixes rebased onto upstream \`dev\` at \`$UP_SHORT\`, so this carries every upstream change up to that commit.
+
+          Installs over the previous build, no uninstall needed.
+
+          **\`app-google-arm64-v8a-alpha.apk\`** for any modern phone.
+
+          Upstream commits included in this sync:
+          HEADER
+          if [ -n "$PREV_BASE" ] && git cat-file -e "$PREV_BASE" 2>/dev/null; then
+            git log --no-merges --pretty='- %s' "$PREV_BASE..upstream/dev" >> notes.md
+          else
+            echo '- see the upstream repository' >> notes.md
+          fi
+          {
+            echo
+            echo 'Reader settings to know about: **Continuous Chapters** (off by default) keeps one chapter in memory at a time.'
+          } >> notes.md
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --title "Upstream sync $(date -u +%Y-%m-%d)" \
+            --notes-file notes.md \
+            "$APKS/app-google-arm64-v8a-alpha.apk" \
+            "$APKS/app-google-universal-alpha.apk"
