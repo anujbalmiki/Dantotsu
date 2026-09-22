@@ -151,6 +151,14 @@ class MangaReaderActivity : AppCompatActivity() {
 
     private var notchHeight: Int? = null
 
+    /**
+     * Off (the default) means the reader holds exactly one chapter: you finish it, hit the
+     * transition screen and pick the next one, the way the app behaved before. On restores the
+     * upstream behaviour of scrolling straight into the next chapter, which never dropped the
+     * chapters it had already appended.
+     */
+    var continuousChapters: Boolean = PrefManager.getVal(PrefName.ContinuousChapters)
+
     private var imageAdapter: BaseImageAdapter? = null
 
     var sliding = false
@@ -1702,6 +1710,7 @@ class MangaReaderActivity : AppCompatActivity() {
     private val loadingChapters = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     internal fun preloadChapterAndAppend(targetChapter: MangaChapter) {
+        if (!continuousChapters) return
         val chapterKey = targetChapter.uniqueNumber()
         if (loadingChapters.contains(chapterKey)) return
 
@@ -1732,6 +1741,7 @@ class MangaReaderActivity : AppCompatActivity() {
     }
 
     internal fun preloadChapterAndPrepend(targetChapter: MangaChapter) {
+        if (!continuousChapters) return
         val chapterKey = targetChapter.uniqueNumber()
         if (loadingChapters.contains(chapterKey)) return
 
@@ -1854,6 +1864,7 @@ class MangaReaderActivity : AppCompatActivity() {
      * grows, which is what makes scrolling stutter after a long session.
      */
     private fun trimReaderWindow() {
+        if (!continuousChapters) return
         val adapter = imageAdapter ?: return
         if (!::chapter.isInitialized) return
         val key = chapter.uniqueNumber()
