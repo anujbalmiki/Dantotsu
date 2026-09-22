@@ -337,6 +337,17 @@ class AnimeWatchAdapter(
 
             setupDownloadAndProgressControls(dialogBinding)
 
+            // Arming rather than acting, to match how the layout and sort controls in this
+            // sheet behave: the choice lands when OK is pressed.
+            var selectOnOk = false
+            mediaSelectDef.text = getString(currContext()!!, R.string.select_episodes)
+            mediaSelectContainer.visibility = View.VISIBLE
+            mediaSelectTop.setOnClickListener {
+                selectOnOk = !selectOnOk
+                mediaSelectTop.alpha = if (selectOnOk) 1f else 0.33f
+            }
+            mediaSelectTop.alpha = 0.33f
+
             fragment.requireContext().customAlertDialog().apply {
                 setTitle("Options")
                 setCustomView(dialogBinding.root)
@@ -346,6 +357,7 @@ class AnimeWatchAdapter(
                         fragment.multiDownload(n = downloadNo.text.toString().toInt())
                     }
                     if (refresh) fragment.loadEpisodes(source, true)
+                    if (selectOnOk) fragment.startEpisodeSelection()
                 }
                 setNegButton("Cancel") {
                     if (refresh) fragment.loadEpisodes(source, true)
