@@ -54,9 +54,10 @@ open class ImageAdapter(
         }
 
         if (hasTransition()) {
-            val isLoading = nextChap != null && nextChap.images().isEmpty()
+            val continuous = activity.continuousChapters
+            val isLoading = continuous && nextChap != null && nextChap.images().isEmpty()
             items.add(ReaderItem.Transition(chap, nextChap, isLoading = isLoading, isPrevious = false))
-            if (nextChap != null && nextChap.images().isNotEmpty()) {
+            if (continuous && nextChap != null && nextChap.images().isNotEmpty()) {
                 val nextImages = nextChap.images()
                 nextImages.forEachIndexed { index, image ->
                     items.add(ReaderItem.Page(image, nextChap, index + 1, nextImages.size))
