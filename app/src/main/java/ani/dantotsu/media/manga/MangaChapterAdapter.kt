@@ -11,7 +11,6 @@ import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.coroutineScope
 import androidx.recyclerview.widget.RecyclerView
 import ani.dantotsu.R
-import ani.dantotsu.connections.updateProgress
 import ani.dantotsu.currContext
 import ani.dantotsu.databinding.ItemChapterListBinding
 import ani.dantotsu.databinding.ItemEpisodeCompactBinding
@@ -388,6 +387,12 @@ class MangaChapterAdapter(
                     else fragment.onMangaChapterClick(arr[bindingAdapterPosition])
                 }
             }
+            itemView.setOnLongClickListener {
+                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size) {
+                    fragment.startChapterSelection(arr[bindingAdapterPosition])
+                    true
+                } else false
+            }
             binding.itemDownload.setOnClickListener {
                 if (selectionMode) {
                     if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size)
@@ -441,13 +446,6 @@ class MangaChapterAdapter(
                         binding.itemEpisodeViewedCover.visibility = View.VISIBLE
                     else {
                         binding.itemEpisodeViewedCover.visibility = View.GONE
-                        binding.itemEpisodeCont.setOnLongClickListener {
-                            updateProgress(
-                                media,
-                                MediaNameAdapter.findChapterNumber(ep.number).toString()
-                            )
-                            true
-                        }
                     }
                 }
             }
@@ -489,13 +487,6 @@ class MangaChapterAdapter(
                     } else {
                         binding.itemEpisodeViewedCover.visibility = View.GONE
                         binding.itemEpisodeViewed.visibility = View.GONE
-                        binding.root.setOnLongClickListener {
-                            updateProgress(
-                                media,
-                                MediaNameAdapter.findChapterNumber(ep.number).toString()
-                            )
-                            true
-                        }
                     }
                 } else {
                     binding.itemEpisodeViewedCover.visibility = View.GONE

@@ -45,6 +45,7 @@ import ani.dantotsu.media.MediaDetailsActivity
 import ani.dantotsu.media.MediaDetailsViewModel
 import ani.dantotsu.media.MediaNameAdapter
 import ani.dantotsu.media.DownloadSelectionMode
+import ani.dantotsu.media.showDownloadManagerDialog
 import ani.dantotsu.media.MediaType
 import ani.dantotsu.navBarHeight
 import ani.dantotsu.notifications.subscription.SubscriptionHelper
@@ -762,6 +763,14 @@ class AnimeWatchFragment : Fragment(), AnimeWatchAdapter.ScanlatorSelectionListe
         episodeAdapter.beginSelection(episodeNumber)
         val mode = DownloadSelectionMode(episodeSelectionTarget)
         if (mode.start()) episodeSelection = mode else episodeAdapter.endSelection()
+    }
+
+    /** Header download button: range in, download or delete out, or hand off to the toolbar. */
+    fun showDownloadManager() {
+        showDownloadManagerDialog(episodeSelectionTarget) { from, to ->
+            startEpisodeSelection()
+            episodeAdapter.selectNumberRange(from, to)
+        }
     }
 
     private val episodeSelectionTarget = object : DownloadSelectionMode.Target {
