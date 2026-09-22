@@ -24,6 +24,7 @@ import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
@@ -40,6 +41,8 @@ import ani.dantotsu.dp
 import ani.dantotsu.isOnline
 import ani.dantotsu.media.Media
 import ani.dantotsu.media.MediaDetailsActivity
+import ani.dantotsu.logError
+import ani.dantotsu.media.DownloadSelectionMode
 import ani.dantotsu.media.MediaDetailsViewModel
 import ani.dantotsu.media.MediaNameAdapter
 import ani.dantotsu.media.MediaType
@@ -537,6 +540,111 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
         }
     }
 
+    // ---- bulk selection ---------------------------------------------------------------------
+
+    private var chapterSelection: DownloadSelectionMode? = null
+
+    /** Long-pressing a chapter row, or the Select entry in the options sheet, lands here. */
+    fun startChapterSelection(chapter: MangaChapter? = null) {
+        if (media.format == "LOCAL") return
+        val existing = chapterSelection
+        if (existing != null) {
+            chapter?.let { chapterAdapter.beginSelection(it) }
+            return
+        }
+        chapterAdapter.onSelectionChanged = { chapterSelection?.refresh() }
+        chapterAdapter.beginSelection(chapter)
+        val mode = DownloadSelectionMode(chapterSelectionTarget)
+        if (mode.start()) chapterSelection = mode else chapterAdapter.endSelection()
+    }
+
+    private val chapterSelectionTarget = object : DownloadSelectionMode.Target {
+        override val selectionActivity: AppCompatActivity?
+            get() = activity as? AppCompatActivity
+        override val selectedCount: Int
+            get() = chapterAdapter.selectedCount
+
+        override fun selectionNumberRange(): Pair<Float, Float>? = chapterAdapter.numberBounds()
+        override fun selectAllItems() = chapterAdapter.selectAll()
+        override fun selectNumberRange(from: Float, to: Float) =
+            chapterAdapter.selectNumberRange(from, to)
+
+        override fun selectDownloadedItems() = chapterAdapter.selectDownloaded()
+        override fun clearItemSelection() = chapterAdapter.endSelection()
+        override fun downloadSelectedItems() = downloadChapters(chapterAdapter.selectedChapters())
+        override fun deleteSelectedItems() = deleteChapters(chapterAdapter.selectedChapters())
+        override fun onSelectionModeFinished() {
+            chapterSelection = null
+        }
+    }
+
+    /**
+     * DownloadsManager is the only thing that knows what is actually on disk. The adapter's
+     * in-memory set is keyed differently and misses whenever the scanlator string does not match.
+     */
+    private fun isChapterDownloaded(chapter: MangaChapter): Boolean =
+        downloadManager.queryDownload(media.mainName(), chapter.number, MediaType.MANGA)
+
+    private fun downloadChapters(chapters: List<MangaChapter>) {
+        val pending = chapters.filter {
+            !isChapterDownloaded(it) && !chapterAdapter.isDownloading(it.uniqueNumber())
+        }
+        if (pending.isEmpty()) {
+            snackString(getString(R.string.nothing_to_download_in_selection))
+            return
+        }
+        snackString(
+            resources.getQuantityString(R.plurals.queued_for_download, pending.size, pending.size)
+        )
+        viewLifecycleOwner.lifecycleScope.launch {
+            for (chapter in pending) {
+                try {
+                    onMangaChapterDownloadClick(chapter)
+                    delay(2000)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logError(e)
+                }
+            }
+        }
+    }
+
+    private fun deleteChapters(chapters: List<MangaChapter>) {
+        val downloaded = chapters.filter { isChapterDownloaded(it) }
+        if (downloaded.isEmpty()) {
+            snackString(getString(R.string.nothing_downloaded_in_selection))
+            return
+        }
+        val total = downloaded.size
+        var remaining = total
+        downloaded.forEach { chapter ->
+            downloadManager.removeDownload(
+                DownloadedType(
+                    media.mainName(),
+                    chapter.number,
+                    MediaType.MANGA,
+                    scanlator = chapter.scanlator ?: "Unknown"
+                ),
+                toast = false
+            ) {
+                chapterAdapter.deleteDownload(chapter)
+                remaining--
+                if (remaining == 0) {
+                    snackString(
+                        resources.getQuantityString(R.plurals.deleted_downloads, total, total)
+                    )
+                    val isOffline = model.mangaReadSources
+                        ?.get(media.selected?.sourceIndex ?: 0) is OfflineMangaParser
+                    if (isOffline) {
+                        model.invalidateMangaSource(media.selected?.sourceIndex ?: 0)
+                        loadChapters(media.selected?.sourceIndex ?: 0, true)
+                    }
+                }
+            }
+        }
+    }
+
     fun onMangaChapterDownloadClick(i: MangaChapter) {
         activity?.let {
             if (!isNotificationPermissionGranted()) {
@@ -554,7 +662,7 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
                     return
                 }
                 val uniqueNum = i.uniqueNumber()
-                if (chapterAdapter.isDownloading(uniqueNum) || chapterAdapter.isDownloaded(uniqueNum)) {
+                if (chapterAdapter.isDownloading(uniqueNum) || isChapterDownloaded(i)) {
                     return
                 }
                 chapterAdapter.startDownload(uniqueNum)
