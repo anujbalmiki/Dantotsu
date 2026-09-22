@@ -1,10 +1,13 @@
 package ani.dantotsu.media.manga
 
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
 import android.widget.NumberPicker
+import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.coroutineScope
 import androidx.recyclerview.widget.RecyclerView
 import ani.dantotsu.R
@@ -17,6 +20,7 @@ import ani.dantotsu.media.MediaNameAdapter
 import ani.dantotsu.setAnimation
 import ani.dantotsu.util.SizeFormatter
 import ani.dantotsu.util.customAlertDialog
+import com.google.android.material.color.MaterialColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -62,14 +66,116 @@ class MangaChapterAdapter(
         RecyclerView.ViewHolder(binding.root) {
         init {
             itemView.setOnClickListener {
-                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size)
-                    fragment.onMangaChapterClick(arr[bindingAdapterPosition])
+                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size) {
+                    if (selectionMode) toggleSelection(bindingAdapterPosition)
+                    else fragment.onMangaChapterClick(arr[bindingAdapterPosition])
+                }
+            }
+            itemView.setOnLongClickListener {
+                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size) {
+                    fragment.startChapterSelection(arr[bindingAdapterPosition])
+                    true
+                } else false
             }
         }
     }
 
     private val activeDownloads = mutableSetOf<String>()
     private val downloadedChapters = mutableSetOf<String>()
+
+    // ---- bulk selection ----------------------------------------------------------------
+    // Keyed by uniqueNumber() so a selection survives the list being re-sorted or re-filtered.
+    private val selectedKeys = linkedSetOf<String>()
+    var selectionMode = false
+        private set
+
+    /** Fired whenever the ticked count changes, so the contextual toolbar can retitle itself. */
+    var onSelectionChanged: (() -> Unit)? = null
+
+    val selectedCount: Int get() = selectedKeys.size
+
+    fun selectedChapters(): List<MangaChapter> = arr.filter { it.uniqueNumber() in selectedKeys }
+
+    fun beginSelection(chapter: MangaChapter? = null) {
+        selectionMode = true
+        chapter?.let { selectedKeys.add(it.uniqueNumber()) }
+        notifyItemRangeChanged(0, arr.size)
+        onSelectionChanged?.invoke()
+    }
+
+    fun endSelection() {
+        if (!selectionMode && selectedKeys.isEmpty()) return
+        selectionMode = false
+        selectedKeys.clear()
+        notifyItemRangeChanged(0, arr.size)
+    }
+
+    fun toggleSelection(position: Int) {
+        val chapter = arr.getOrNull(position) ?: return
+        val key = chapter.uniqueNumber()
+        if (!selectedKeys.remove(key)) selectedKeys.add(key)
+        notifyItemChanged(position)
+        onSelectionChanged?.invoke()
+    }
+
+    fun selectAll() {
+        selectedKeys.clear()
+        arr.forEach { selectedKeys.add(it.uniqueNumber()) }
+        notifyItemRangeChanged(0, arr.size)
+        onSelectionChanged?.invoke()
+    }
+
+    /** Ticks every chapter whose parsed number falls inside [from]..[to]. */
+    fun selectNumberRange(from: Float, to: Float): Int {
+        var ticked = 0
+        arr.forEach { chapter ->
+            val number = chapterNumberOf(chapter) ?: return@forEach
+            if (number in from..to && selectedKeys.add(chapter.uniqueNumber())) ticked++
+        }
+        notifyItemRangeChanged(0, arr.size)
+        onSelectionChanged?.invoke()
+        return ticked
+    }
+
+    fun selectDownloaded(): Int {
+        var ticked = 0
+        arr.forEach { chapter ->
+            if (isDownloaded(chapter) && selectedKeys.add(chapter.uniqueNumber())) ticked++
+        }
+        notifyItemRangeChanged(0, arr.size)
+        onSelectionChanged?.invoke()
+        return ticked
+    }
+
+    /** Lowest and highest parsed chapter numbers, for seeding the range dialog. */
+    fun numberBounds(): Pair<Float, Float>? {
+        val numbers = arr.mapNotNull { chapterNumberOf(it) }
+        if (numbers.isEmpty()) return null
+        return numbers.min() to numbers.max()
+    }
+
+    private fun chapterNumberOf(chapter: MangaChapter): Float? =
+        MediaNameAdapter.findChapterNumber(chapter.number) ?: chapter.number.trim().toFloatOrNull()
+
+    private fun isSelected(chapter: MangaChapter) = chapter.uniqueNumber() in selectedKeys
+
+    /**
+     * Tinted foreground rather than a background or a checkbox: the item layouts are CardViews
+     * with their own backgrounds, and a foreground overlay shows through regardless of which
+     * layout variant is bound.
+     */
+    private fun paintSelection(itemView: View, selected: Boolean) {
+        itemView.foreground = if (selected) {
+            ColorDrawable(
+                ColorUtils.setAlphaComponent(
+                    MaterialColors.getColor(
+                        itemView, androidx.appcompat.R.attr.colorPrimary, Color.CYAN
+                    ),
+                    80
+                )
+            )
+        } else null
+    }
 
     fun isDownloading(chapterNumber: String): Boolean = activeDownloads.contains(chapterNumber)
     fun isDownloaded(chapterNumber: String): Boolean = downloadedChapters.contains(chapterNumber)
@@ -277,10 +383,17 @@ class MangaChapterAdapter(
 
         init {
             itemView.setOnClickListener {
-                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size)
-                    fragment.onMangaChapterClick(arr[bindingAdapterPosition])
+                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size) {
+                    if (selectionMode) toggleSelection(bindingAdapterPosition)
+                    else fragment.onMangaChapterClick(arr[bindingAdapterPosition])
+                }
             }
             binding.itemDownload.setOnClickListener {
+                if (selectionMode) {
+                    if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size)
+                        toggleSelection(bindingAdapterPosition)
+                    return@setOnClickListener
+                }
                 if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size) {
                     val chapter = arr[bindingAdapterPosition]
                     val chapterNumber = chapter.uniqueNumber()
@@ -304,49 +417,8 @@ class MangaChapterAdapter(
                 }
             }
             binding.itemDownload.setOnLongClickListener {
-                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size){
-                    val chapter = arr[bindingAdapterPosition]
-                    val chapterNumber = chapter.uniqueNumber()
-                    if(activeDownloads.contains(chapterNumber) || isDownloaded(chapter)){
-                        fragment.requireContext().customAlertDialog().apply {
-                            setTitle("Multi Chapter Deleter")
-                            setMessage("Enter the number of chapters to delete")
-                            val input = NumberPicker(currContext())
-                            input.minValue = 1
-                            input.maxValue = itemCount - bindingAdapterPosition
-                            input.value = 1
-                            setCustomView(input)
-                            setPosButton(R.string.ok) {
-                                binding.root.context.customAlertDialog().apply {
-                                    setTitle("Delete Chapters")
-                                    setMessage("Are you sure you want to delete the next ${input.value} chapters?")
-                                    setPosButton(R.string.yes) {
-                                        deleteNChaptersFrom(bindingAdapterPosition, input.value)
-                                    }
-                                    setNegButton(R.string.no)
-                                }.show()
-                            }
-                            setNegButton(R.string.cancel)
-                            show()
-                        }
-                    }
-                    else{
-                        //Alert dialog asking for the number of chapters to download
-                        it.context.customAlertDialog().apply {
-                            setTitle("Multi Chapter Downloader")
-                            setMessage("Enter the number of chapters to download")
-                            val input = NumberPicker(currContext())
-                            input.minValue = 1
-                            input.maxValue = itemCount - bindingAdapterPosition
-                            input.value = 1
-                            setCustomView(input)
-                            setPosButton("OK") {
-                                downloadNChaptersFrom(bindingAdapterPosition, input.value)
-                            }
-                            setNegButton("Cancel")
-                            show()
-                        }
-                    }
+                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size) {
+                    fragment.startChapterSelection(arr[bindingAdapterPosition])
                 }
                 true
             }
@@ -359,6 +431,7 @@ class MangaChapterAdapter(
                 val binding = holder.binding
                 setAnimation(fragment.requireContext(), holder.binding.root)
                 val ep = arr[position]
+                paintSelection(holder.itemView, isSelected(ep))
                 val parsedNumber = MediaNameAdapter.findChapterNumber(ep.number)?.toInt()
                 binding.itemEpisodeNumber.text = parsedNumber?.toString() ?: ep.number
                 if (media.userProgress != null) {
@@ -382,6 +455,7 @@ class MangaChapterAdapter(
             is ChapterListViewHolder -> {
                 val binding = holder.binding
                 val ep = arr[position]
+                paintSelection(holder.itemView, isSelected(ep))
                 holder.bind(ep, ep.progress)
                 setAnimation(fragment.requireContext(), holder.binding.root)
                 binding.itemChapterNumber.text = ep.number
