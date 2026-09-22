@@ -1,11 +1,14 @@
 package ani.dantotsu.media.anime
 
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
 import android.widget.LinearLayout
 import androidx.annotation.OptIn
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.isVisible
 import androidx.lifecycle.coroutineScope
 import androidx.media3.common.util.UnstableApi
@@ -22,6 +25,7 @@ import ani.dantotsu.settings.saving.PrefManager
 import ani.dantotsu.util.customAlertDialog
 import ani.dantotsu.util.SizeFormatter
 import com.bumptech.glide.Glide
+import com.google.android.material.color.MaterialColors
 import com.bumptech.glide.load.model.GlideUrl
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -144,6 +148,7 @@ class EpisodeAdapter(
             is EpisodeListViewHolder -> {
                 val binding = holder.binding
                 setAnimation(fragment.requireContext(), holder.binding.root)
+                paintSelection(holder.itemView, isSelected(ep.number))
 
                 val thumb = ep.thumb?.let {
                     if (it.url.isNotEmpty()) {
@@ -215,6 +220,7 @@ class EpisodeAdapter(
             is EpisodeGridViewHolder -> {
                 val binding = holder.binding
                 setAnimation(fragment.requireContext(), holder.binding.root)
+                paintSelection(holder.itemView, isSelected(ep.number))
 
                 val thumb = ep.thumb?.let {
                     if (it.url.isNotEmpty()) {
@@ -281,6 +287,7 @@ class EpisodeAdapter(
             is EpisodeCompactViewHolder -> {
                 val binding = holder.binding
                 setAnimation(fragment.requireContext(), holder.binding.root)
+                paintSelection(holder.itemView, isSelected(ep.number))
                 binding.itemEpisodeNumber.text = ep.number
                 binding.itemEpisodeFillerView.isVisible = ep.filler
                 val epNum = MediaNameAdapter.findEpisodeNumber(ep.number) ?: ep.number.toFloatOrNull() ?: 9999f
@@ -308,6 +315,101 @@ class EpisodeAdapter(
 
     override fun getItemCount(): Int = arr.size
     private val downloadedEpisodes = mutableSetOf<String>()
+
+    // ---- bulk selection ----------------------------------------------------------------
+    private val selectedKeys = linkedSetOf<String>()
+    var selectionMode = false
+        private set
+
+    /** Fired whenever the ticked count changes, so the contextual toolbar can retitle itself. */
+    var onSelectionChanged: (() -> Unit)? = null
+
+    val selectedCount: Int get() = selectedKeys.size
+
+    fun selectedEpisodes(): List<String> = arr.map { it.number }.filter { it in selectedKeys }
+
+    fun beginSelection(episodeNumber: String? = null) {
+        selectionMode = true
+        episodeNumber?.let { selectedKeys.add(it) }
+        notifyItemRangeChanged(0, arr.size)
+        onSelectionChanged?.invoke()
+    }
+
+    fun endSelection() {
+        if (!selectionMode && selectedKeys.isEmpty()) return
+        selectionMode = false
+        selectedKeys.clear()
+        notifyItemRangeChanged(0, arr.size)
+    }
+
+    fun toggleSelection(position: Int) {
+        val episode = arr.getOrNull(position) ?: return
+        if (!selectedKeys.remove(episode.number)) selectedKeys.add(episode.number)
+        notifyItemChanged(position)
+        onSelectionChanged?.invoke()
+    }
+
+    fun selectAll() {
+        selectedKeys.clear()
+        arr.forEach { selectedKeys.add(it.number) }
+        notifyItemRangeChanged(0, arr.size)
+        onSelectionChanged?.invoke()
+    }
+
+    /** Ticks every episode whose parsed number falls inside [from]..[to]. */
+    fun selectNumberRange(from: Float, to: Float): Int {
+        var ticked = 0
+        arr.forEach { episode ->
+            val number = episodeNumberOf(episode.number) ?: return@forEach
+            if (number in from..to && selectedKeys.add(episode.number)) ticked++
+        }
+        notifyItemRangeChanged(0, arr.size)
+        onSelectionChanged?.invoke()
+        return ticked
+    }
+
+    fun selectDownloaded(): Int {
+        var ticked = 0
+        arr.forEach { episode ->
+            if (downloadedEpisodes.contains(episode.number) && selectedKeys.add(episode.number)) {
+                ticked++
+            }
+        }
+        notifyItemRangeChanged(0, arr.size)
+        onSelectionChanged?.invoke()
+        return ticked
+    }
+
+    /** Lowest and highest parsed episode numbers, for seeding the range dialog. */
+    fun numberBounds(): Pair<Float, Float>? {
+        val numbers = arr.mapNotNull { episodeNumberOf(it.number) }
+        if (numbers.isEmpty()) return null
+        return numbers.min() to numbers.max()
+    }
+
+    private fun episodeNumberOf(number: String): Float? =
+        MediaNameAdapter.findEpisodeNumber(number)
+            ?: MediaNameAdapter.findChapterNumber(number)
+            ?: number.trim().toFloatOrNull()
+
+    private fun isSelected(number: String) = number in selectedKeys
+
+    /**
+     * Tinted foreground rather than a background: the item layouts are CardViews with their own
+     * backgrounds and tints, and a foreground overlay shows through whichever variant is bound.
+     */
+    private fun paintSelection(itemView: View, selected: Boolean) {
+        itemView.foreground = if (selected) {
+            ColorDrawable(
+                ColorUtils.setAlphaComponent(
+                    MaterialColors.getColor(
+                        itemView, androidx.appcompat.R.attr.colorPrimary, Color.CYAN
+                    ),
+                    80
+                )
+            )
+        } else null
+    }
 
     fun clearAllDownloaded() {
         downloadedEpisodes.clear()
@@ -405,23 +507,31 @@ class EpisodeAdapter(
     }
 
 
+    private fun handleRowClick(position: Int) {
+        if (position < 0 || position >= arr.size) return
+        if (selectionMode) toggleSelection(position)
+        else fragment.onEpisodeClick(arr[position].number)
+    }
+
+    private fun handleRowLongClick(position: Int): Boolean {
+        if (position < 0 || position >= arr.size) return false
+        fragment.startEpisodeSelection(arr[position].number)
+        return true
+    }
+
     inner class EpisodeCompactViewHolder(val binding: ItemEpisodeCompactBinding) :
         RecyclerView.ViewHolder(binding.root) {
         init {
-            itemView.setOnClickListener {
-                if (bindingAdapterPosition < arr.size && bindingAdapterPosition >= 0)
-                    fragment.onEpisodeClick(arr[bindingAdapterPosition].number)
-            }
+            itemView.setOnClickListener { handleRowClick(bindingAdapterPosition) }
+            itemView.setOnLongClickListener { handleRowLongClick(bindingAdapterPosition) }
         }
     }
 
     inner class EpisodeGridViewHolder(val binding: ItemEpisodeGridBinding) :
         RecyclerView.ViewHolder(binding.root) {
         init {
-            itemView.setOnClickListener {
-                if (bindingAdapterPosition < arr.size && bindingAdapterPosition >= 0)
-                    fragment.onEpisodeClick(arr[bindingAdapterPosition].number)
-            }
+            itemView.setOnClickListener { handleRowClick(bindingAdapterPosition) }
+            itemView.setOnLongClickListener { handleRowLongClick(bindingAdapterPosition) }
         }
     }
 
@@ -430,11 +540,14 @@ class EpisodeAdapter(
         private val activeCoroutines = mutableSetOf<String>()
 
         init {
-            itemView.setOnClickListener {
-                if (bindingAdapterPosition < arr.size && bindingAdapterPosition >= 0)
-                    fragment.onEpisodeClick(arr[bindingAdapterPosition].number)
-            }
+            itemView.setOnClickListener { handleRowClick(bindingAdapterPosition) }
+            itemView.setOnLongClickListener { handleRowLongClick(bindingAdapterPosition) }
             binding.itemDownload.setOnClickListener {
+                if (selectionMode) {
+                    if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size)
+                        toggleSelection(bindingAdapterPosition)
+                    return@setOnClickListener
+                }
                 if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size) {
                     val episodeNumber = arr[bindingAdapterPosition].number
                     if(AnimeDownloader.isDownloading(media.id, episodeNumber)){
@@ -456,51 +569,7 @@ class EpisodeAdapter(
                 }
             }
             binding.itemDownload.setOnLongClickListener {
-                if (0 <= bindingAdapterPosition && bindingAdapterPosition < arr.size) {
-                    val episodeNumber = arr[bindingAdapterPosition].number
-                    if (downloadedEpisodes.contains(episodeNumber)) {
-                        //fragment.fixDownload(episodeNumber)
-                        fragment.requireContext().customAlertDialog().apply {
-                            setTitle("Multi Episode Deleter")
-                            setMessage("Enter the number of episodes to delete")
-                            val input = NumberPicker(currContext())
-                            input.minValue = 1
-                            input.maxValue = itemCount - bindingAdapterPosition
-                            input.value = 1
-                            setCustomView(input)
-                            setPosButton(R.string.ok) {
-                                binding.root.context.customAlertDialog().apply {
-                                    setTitle("Delete Episodes")
-                                    setMessage("Are you sure you want to delete Episodes $episodeNumber -> ${arr[bindingAdapterPosition + input.value - 1].number}?")
-                                    setPosButton(R.string.yes) {
-                                        fragment.multiDelete(episodeNumber, input.value)
-                                    }
-                                    setNegButton(R.string.no)
-                                }.show()
-                            }
-                            setNegButton(R.string.cancel)
-                            show()
-                        }
-                    }
-                    else {
-                        fragment.requireContext().customAlertDialog().apply {
-                            setTitle("Multi Episode Downloader")
-                            setMessage("Enter the number of episodes to download")
-                            val input = NumberPicker(currContext())
-                            input.minValue = 1
-                            input.maxValue = itemCount - bindingAdapterPosition
-                            input.value = 1
-                            setCustomView(input)
-                            setPosButton(R.string.ok) {
-                                fragment.multiDownload(episodeNumber, input.value)
-                            }
-                            setNegButton(R.string.cancel)
-                            show()
-                        }
-                    }
-                }
-
-                true
+                handleRowLongClick(bindingAdapterPosition)
             }
             binding.itemEpisodeDesc.setOnClickListener {
                 if (binding.itemEpisodeDesc.maxLines == 3)
