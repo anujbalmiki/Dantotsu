@@ -104,6 +104,12 @@ class MangaReadAdapter(
         setupSubscribeButton(binding)
 
         binding.mediaTorrentButton.visibility = View.GONE
+
+        binding.mediaDownloadManager.visibility =
+            if (media.format == "LOCAL") View.GONE else View.VISIBLE
+        binding.mediaDownloadManager.setOnClickListener {
+            fragment.showDownloadManager()
+        }
         binding.mediaNestedButton.setOnClickListener {
             showLayoutOptionsDialog(source)
         }
@@ -231,8 +237,7 @@ class MangaReadAdapter(
         var reversed: Boolean,
         var style: Int,
         var run: Boolean = false,
-        var refresh: Boolean = false,
-        var selectOnOk: Boolean = false
+        var refresh: Boolean = false
     )
 
     private fun showLayoutOptionsDialog(source: Int) {
@@ -247,7 +252,6 @@ class MangaReadAdapter(
         setupLayoutWebviewOption(dialogBinding, source, state)
         setupLayoutDownloadOptions(dialogBinding)
         setupLayoutResetProgress(dialogBinding)
-        setupLayoutSelectOption(dialogBinding, state)
         showLayoutMainDialog(dialogBinding, source, state)
     }
 
@@ -348,19 +352,6 @@ class MangaReadAdapter(
         dialogBinding.resetProgressDef.text = getString(currContext()!!, R.string.clear_stored_chapter)
     }
 
-    // Arming rather than acting, to match how the layout and sort controls in this sheet
-    // behave: the choice lands when OK is pressed.
-    private fun setupLayoutSelectOption(dialogBinding: DialogLayoutBinding, state: MangaLayoutOptionsState) {
-        dialogBinding.mediaSelectDef.text = getString(currContext()!!, R.string.select_chapters)
-        dialogBinding.mediaSelectContainer.visibility =
-            if (media.format == "LOCAL") View.GONE else View.VISIBLE
-        dialogBinding.mediaSelectTop.setOnClickListener {
-            state.selectOnOk = !state.selectOnOk
-            dialogBinding.mediaSelectTop.alpha = if (state.selectOnOk) 1f else 0.33f
-        }
-        dialogBinding.mediaSelectTop.alpha = 0.33f
-    }
-
     private fun showLayoutMainDialog(
         dialogBinding: DialogLayoutBinding,
         source: Int,
@@ -376,7 +367,6 @@ class MangaReadAdapter(
                     fragment.multiDownload(value)
                 }
                 if (state.refresh) fragment.loadChapters(source, true)
-                if (state.selectOnOk) fragment.startChapterSelection()
             }
             setNegButton("Cancel") {
                 if (state.refresh) fragment.loadChapters(source, true)
