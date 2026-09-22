@@ -21,6 +21,7 @@ import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
 import androidx.recyclerview.widget.ConcatAdapter
@@ -43,6 +44,7 @@ import ani.dantotsu.media.Media
 import ani.dantotsu.media.MediaDetailsActivity
 import ani.dantotsu.media.MediaDetailsViewModel
 import ani.dantotsu.media.MediaNameAdapter
+import ani.dantotsu.media.DownloadSelectionMode
 import ani.dantotsu.media.MediaType
 import ani.dantotsu.navBarHeight
 import ani.dantotsu.notifications.subscription.SubscriptionHelper
@@ -743,6 +745,92 @@ class AnimeWatchFragment : Fragment(), AnimeWatchAdapter.ScanlatorSelectionListe
             }
         }
         sheet.show(parentFragmentManager, "DirectTorrentBottomSheet")
+    }
+
+    // ---- bulk selection ---------------------------------------------------------------------
+
+    private var episodeSelection: DownloadSelectionMode? = null
+
+    /** Long-pressing an episode row, or the Select entry in the options sheet, lands here. */
+    fun startEpisodeSelection(episodeNumber: String? = null) {
+        val existing = episodeSelection
+        if (existing != null) {
+            episodeNumber?.let { episodeAdapter.beginSelection(it) }
+            return
+        }
+        episodeAdapter.onSelectionChanged = { episodeSelection?.refresh() }
+        episodeAdapter.beginSelection(episodeNumber)
+        val mode = DownloadSelectionMode(episodeSelectionTarget)
+        if (mode.start()) episodeSelection = mode else episodeAdapter.endSelection()
+    }
+
+    private val episodeSelectionTarget = object : DownloadSelectionMode.Target {
+        override val selectionActivity: AppCompatActivity?
+            get() = activity as? AppCompatActivity
+        override val selectedCount: Int
+            get() = episodeAdapter.selectedCount
+
+        override fun selectionNumberRange(): Pair<Float, Float>? = episodeAdapter.numberBounds()
+        override fun selectAllItems() = episodeAdapter.selectAll()
+        override fun selectNumberRange(from: Float, to: Float) =
+            episodeAdapter.selectNumberRange(from, to)
+
+        override fun selectDownloadedItems() = episodeAdapter.selectDownloaded()
+        override fun clearItemSelection() = episodeAdapter.endSelection()
+        override fun downloadSelectedItems() = downloadEpisodes(episodeAdapter.selectedEpisodes())
+        override fun deleteSelectedItems() = deleteEpisodes(episodeAdapter.selectedEpisodes())
+        override fun onSelectionModeFinished() {
+            episodeSelection = null
+        }
+    }
+
+    /** DownloadsManager is the only thing that knows what actually made it to disk. */
+    private fun isEpisodeDownloaded(episodeNumber: String): Boolean =
+        downloadManager.queryDownload(media.mainName(), episodeNumber, MediaType.ANIME)
+
+    private fun downloadEpisodes(episodes: List<String>) {
+        val pending = episodes.filter { !isEpisodeDownloaded(it) }
+        if (pending.isEmpty()) {
+            snackString(getString(R.string.nothing_to_download_in_selection))
+            return
+        }
+        snackString(
+            resources.getQuantityString(R.plurals.queued_for_download, pending.size, pending.size)
+        )
+        onAnimeEpisodesDownload(ArrayList(pending))
+    }
+
+    private fun deleteEpisodes(episodes: List<String>) {
+        val downloaded = episodes.filter { isEpisodeDownloaded(it) }
+        if (downloaded.isEmpty()) {
+            snackString(getString(R.string.nothing_downloaded_in_selection))
+            return
+        }
+        val total = downloaded.size
+        var remaining = total
+        downloaded.forEach { episodeNumber ->
+            downloadManager.removeDownload(
+                DownloadedType(media.mainName(), episodeNumber, MediaType.ANIME),
+                toast = false
+            ) {
+                val taskName = AnimeDownloaderService.AnimeDownloadTask
+                    .getTaskName(media.mainName(), episodeNumber)
+                PrefManager.getAnimeDownloadPreferences().edit().remove(taskName).apply()
+                episodeAdapter.deleteDownload(episodeNumber)
+                remaining--
+                if (remaining == 0) {
+                    snackString(
+                        resources.getQuantityString(R.plurals.deleted_downloads, total, total)
+                    )
+                    val isDownloadedSource = model.watchSources
+                        ?.isDownloadedSource(media.selected?.sourceIndex ?: 0) == true
+                    if (isDownloadedSource) {
+                        model.invalidateSource(media.selected?.sourceIndex ?: 0)
+                        loadEpisodes(media.selected?.sourceIndex ?: 0, true)
+                    }
+                }
+            }
+        }
     }
 
     fun onAnimeEpisodesDownload(episodesToDownload: ArrayList<String>) {

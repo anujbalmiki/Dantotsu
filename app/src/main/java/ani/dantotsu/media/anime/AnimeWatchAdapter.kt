@@ -268,6 +268,7 @@ class AnimeWatchAdapter(
             dialogBinding.apply {
                 var refresh = false
                 var run = false
+                var selectOnOk = false
                 var reversed = media.selected!!.recyclerReversed
                 var style =
                     media.selected!!.recyclerStyle ?: PrefManager.getVal(PrefName.AnimeDefaultView)
@@ -403,6 +404,16 @@ class AnimeWatchAdapter(
 
                 resetProgressDef.text = getString(currContext()!!, R.string.clear_stored_episode)
 
+                // Arming rather than acting, to match how the layout and sort controls in this
+                // sheet behave: the choice lands when OK is pressed.
+                mediaSelectDef.text = getString(currContext()!!, R.string.select_episodes)
+                mediaSelectContainer.visibility = View.VISIBLE
+                mediaSelectTop.setOnClickListener {
+                    selectOnOk = !selectOnOk
+                    mediaSelectTop.alpha = if (selectOnOk) 1f else 0.33f
+                }
+                mediaSelectTop.alpha = 0.33f
+
                 //animeDownloadContainer.visibility = View.GONE
                 fragment.requireContext().customAlertDialog().apply {
                     setTitle("Options")
@@ -413,6 +424,10 @@ class AnimeWatchAdapter(
                             fragment.multiDownload(n = downloadNo.text.toString().toInt())
                         }
                         if (refresh) fragment.loadEpisodes(source, true)
+                        if (selectOnOk) {
+                            selectOnOk = false
+                            fragment.startEpisodeSelection()
+                        }
                     }
                     setNegButton("Cancel") {
                         if (refresh) fragment.loadEpisodes(source, true)

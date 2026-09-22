@@ -1454,4 +1454,37 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
     <string name="change_download_directory_confirm">Are you sure you want to change the download directory? Existing downloads will remain in the old directory.</string>
     <string name="purge_downloads">Purge All Downloads</string>
     <string name="purge_downloads_desc">Delete all downloaded anime, manga, and novel files to free up storage</string>
+
+    <!-- Bulk chapter / episode selection -->
+    <string name="select_chapters">Select Chapters</string>
+    <string name="select_episodes">Select Episodes</string>
+    <string name="select_items">Select</string>
+    <string name="download_selected">Download selected</string>
+    <string name="delete_selected">Delete selected</string>
+    <string name="select_range">Select range</string>
+    <string name="select_downloaded">Select downloaded</string>
+    <string name="select_all">Select all</string>
+    <string name="range_from">From</string>
+    <string name="range_to">To</string>
+    <string name="range_available">Available: %1$s to %2$s</string>
+    <string name="range_unavailable">Nothing numbered in this list</string>
+    <string name="range_invalid">Enter two numbers</string>
+    <string name="nothing_downloaded_in_selection">Nothing in the selection is downloaded</string>
+    <string name="nothing_to_download_in_selection">Everything selected is already downloaded</string>
+    <plurals name="delete_selected_confirm">
+        <item quantity="one">Delete %1$d downloaded item? This cannot be undone.</item>
+        <item quantity="other">Delete %1$d downloaded items? This cannot be undone.</item>
+    </plurals>
+    <plurals name="range_selected">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <plurals name="queued_for_download">
+        <item quantity="one">Queued %1$d for download</item>
+        <item quantity="other">Queued %1$d for download</item>
+    </plurals>
+    <plurals name="deleted_downloads">
+        <item quantity="one">Deleted %1$d download</item>
+        <item quantity="other">Deleted %1$d downloads</item>
+    </plurals>
 </resources>
