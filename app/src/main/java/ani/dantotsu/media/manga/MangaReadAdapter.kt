@@ -218,11 +218,16 @@ class MangaReadAdapter(
 
         binding.mediaTorrentButton.visibility = View.GONE
 
+        binding.mediaDownloadManager.visibility =
+            if (media.format == "LOCAL") View.GONE else View.VISIBLE
+        binding.mediaDownloadManager.setOnClickListener {
+            fragment.showDownloadManager()
+        }
+
         binding.mediaNestedButton.setOnClickListener {
             val dialogBinding = DialogLayoutBinding.inflate(fragment.layoutInflater)
             var refresh = false
             var run = false
-            var selectOnOk = false
             var reversed = media.selected!!.recyclerReversed
             var style =
                 media.selected!!.recyclerStyle ?: PrefManager.getVal(PrefName.MangaDefaultView)
@@ -337,17 +342,6 @@ class MangaReadAdapter(
                 }
                 resetProgressDef.text = getString(currContext()!!, R.string.clear_stored_chapter)
 
-                // Arming rather than acting, to match how the layout and sort controls in this
-                // sheet behave: the choice lands when OK is pressed.
-                mediaSelectDef.text = getString(currContext()!!, R.string.select_chapters)
-                mediaSelectContainer.visibility =
-                    if (media.format == "LOCAL") View.GONE else View.VISIBLE
-                mediaSelectTop.setOnClickListener {
-                    selectOnOk = !selectOnOk
-                    mediaSelectTop.alpha = if (selectOnOk) 1f else 0.33f
-                }
-                mediaSelectTop.alpha = 0.33f
-
                 fragment.requireContext().customAlertDialog().apply {
                     setTitle("Options")
                     setCustomView(root)
@@ -358,10 +352,6 @@ class MangaReadAdapter(
                             fragment.multiDownload(value)
                         }
                         if (refresh) fragment.loadChapters(source, true)
-                        if (selectOnOk) {
-                            selectOnOk = false
-                            fragment.startChapterSelection()
-                        }
                     }
                     setNegButton("Cancel") {
                         if (refresh) fragment.loadChapters(source, true)
