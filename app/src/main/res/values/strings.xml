@@ -1464,6 +1464,11 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
     <string name="select_range">Select range</string>
     <string name="select_downloaded">Select downloaded</string>
     <string name="select_all">Select all</string>
+    <string name="manage_downloads">Manage downloads</string>
+    <string name="download_range">Download range</string>
+    <string name="delete_range">Delete range</string>
+    <string name="pick_manually">Pick manually</string>
+    <string name="delete_all_downloaded">Delete everything downloaded</string>
     <string name="range_from">From</string>
     <string name="range_to">To</string>
     <string name="range_available">Available: %1$s to %2$s</string>

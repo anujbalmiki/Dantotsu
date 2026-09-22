@@ -5,10 +5,13 @@ import android.view.Menu
 import android.view.MenuItem
 import android.widget.EditText
 import android.widget.TextView
+import android.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.view.ActionMode
 import ani.dantotsu.R
+import ani.dantotsu.toast
 import ani.dantotsu.util.customAlertDialog
+import com.google.android.material.button.MaterialButton
 
 /**
  * Contextual toolbar for picking several chapters or episodes and downloading or deleting them in
@@ -163,6 +166,117 @@ class DownloadSelectionMode(private val target: Target) : ActionMode.Callback {
             setNegButton(R.string.cancel)
             show()
         }
+    }
+}
+
+/**
+ * The download manager sheet behind the header button: type a range, then download it, delete it,
+ * or open the selection toolbar pre-ticked so single items can be adjusted by hand.
+ *
+ * It drives the same [DownloadSelectionMode.Target] the toolbar uses. Ticking works with the
+ * toolbar closed, so the range buttons tick, act, then untick without ever showing it.
+ */
+fun showDownloadManagerDialog(
+    target: DownloadSelectionMode.Target,
+    onPickManually: (from: Float, to: Float) -> Unit
+) {
+    val activity = target.selectionActivity ?: return
+    val view = LayoutInflater.from(activity).inflate(R.layout.dialog_download_manager, null)
+    val fromField = view.findViewById<EditText>(R.id.rangeFrom)
+    val toField = view.findViewById<EditText>(R.id.rangeTo)
+    val hint = view.findViewById<TextView>(R.id.rangeHint)
+
+    val bounds = target.selectionNumberRange()
+    if (bounds != null) {
+        hint.text = activity.getString(
+            R.string.range_available, bounds.first.trimNumber(), bounds.second.trimNumber()
+        )
+        fromField.setText(bounds.first.trimNumber())
+        toField.setText(bounds.second.trimNumber())
+    } else {
+        hint.text = activity.getString(R.string.range_unavailable)
+    }
+
+    var dialog: AlertDialog? = null
+
+    /** Reads the two fields, or null (having complained) when either is not a number. */
+    fun readRange(): Pair<Float, Float>? {
+        val from = fromField.text.toString().trim().toFloatOrNull()
+        val to = toField.text.toString().trim().toFloatOrNull()
+        if (from == null || to == null) {
+            toast(activity.getString(R.string.range_invalid))
+            return null
+        }
+        return minOf(from, to) to maxOf(from, to)
+    }
+
+    /** Ticks the range and hands back how many landed, or null when the range caught nothing. */
+    fun tickRange(): Int? {
+        val (from, to) = readRange() ?: return null
+        target.clearItemSelection()
+        val ticked = target.selectNumberRange(from, to)
+        if (ticked == 0) {
+            target.clearItemSelection()
+            toast(activity.resources.getQuantityString(R.plurals.range_selected, 0, 0))
+            return null
+        }
+        return ticked
+    }
+
+    fun confirmDelete(count: Int) {
+        activity.customAlertDialog().apply {
+            setTitle(activity.getString(R.string.delete_selected))
+            setMessage(
+                activity.resources.getQuantityString(
+                    R.plurals.delete_selected_confirm, count, count
+                )
+            )
+            setPosButton(R.string.yes) {
+                target.deleteSelectedItems()
+                target.clearItemSelection()
+                dialog?.dismiss()
+            }
+            setNegButton(R.string.no) { target.clearItemSelection() }
+            show()
+        }
+    }
+
+    view.findViewById<MaterialButton>(R.id.rangeDownload).setOnClickListener {
+        tickRange() ?: return@setOnClickListener
+        target.downloadSelectedItems()
+        target.clearItemSelection()
+        dialog?.dismiss()
+    }
+
+    view.findViewById<MaterialButton>(R.id.rangeDelete).setOnClickListener {
+        val ticked = tickRange() ?: return@setOnClickListener
+        confirmDelete(ticked)
+    }
+
+    view.findViewById<MaterialButton>(R.id.rangeAllDownloaded).setOnClickListener {
+        target.clearItemSelection()
+        val ticked = target.selectDownloadedItems()
+        if (ticked == 0) {
+            target.clearItemSelection()
+            toast(activity.getString(R.string.nothing_downloaded_in_selection))
+            return@setOnClickListener
+        }
+        confirmDelete(ticked)
+    }
+
+    view.findViewById<MaterialButton>(R.id.rangePickManually).setOnClickListener {
+        val (from, to) = readRange() ?: return@setOnClickListener
+        target.clearItemSelection()
+        dialog?.dismiss()
+        onPickManually(from, to)
+    }
+
+    activity.customAlertDialog().apply {
+        setTitle(activity.getString(R.string.manage_downloads))
+        setCustomView(view)
+        setNegButton(R.string.close)
+        attach { dialog = it }
+        show()
     }
 }
 
