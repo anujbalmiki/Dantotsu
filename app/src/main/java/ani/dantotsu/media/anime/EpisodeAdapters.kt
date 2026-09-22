@@ -14,7 +14,6 @@ import androidx.lifecycle.coroutineScope
 import androidx.media3.common.util.UnstableApi
 import androidx.recyclerview.widget.RecyclerView
 import ani.dantotsu.R
-import ani.dantotsu.connections.updateProgress
 import ani.dantotsu.databinding.ItemEpisodeCompactBinding
 import ani.dantotsu.databinding.ItemEpisodeGridBinding
 import ani.dantotsu.databinding.ItemEpisodeListBinding
@@ -198,10 +197,6 @@ class EpisodeAdapter(
                     } else {
                         binding.itemEpisodeViewedCover.visibility = View.GONE
                         binding.itemEpisodeViewed.visibility = View.GONE
-                        binding.itemEpisodeCont.setOnLongClickListener {
-                            updateProgress(media, ep.number)
-                            true
-                        }
                     }
                 } else {
                     binding.itemEpisodeViewedCover.visibility = View.GONE
@@ -266,10 +261,6 @@ class EpisodeAdapter(
                     } else {
                         binding.itemEpisodeViewedCover.visibility = View.GONE
                         binding.itemEpisodeViewed.visibility = View.GONE
-                        binding.itemEpisodeCont.setOnLongClickListener {
-                            updateProgress(media, ep.number)
-                            true
-                        }
                     }
                 } else {
                     binding.itemEpisodeViewedCover.visibility = View.GONE
@@ -296,10 +287,6 @@ class EpisodeAdapter(
                         binding.itemEpisodeViewedCover.visibility = View.VISIBLE
                     else {
                         binding.itemEpisodeViewedCover.visibility = View.GONE
-                        binding.itemEpisodeCont.setOnLongClickListener {
-                            updateProgress(media, ep.number)
-                            true
-                        }
                     }
                 }
                 handleProgress(
