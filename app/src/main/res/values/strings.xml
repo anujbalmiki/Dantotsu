@@ -1385,6 +1385,8 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
     <string name="image_quality_lanczos">Lanczos (HQ)</string>
     <string name="preload_amount">Page Preload Amount</string>
     <string name="always_show_chapter_transition">Always Show Chapter Transition</string>
+    <string name="continuous_chapters">Continuous Chapters</string>
+    <string name="continuous_chapters_info">Keep scrolling into the next chapter. Off keeps one chapter in memory at a time.</string>
     <string name="manga_translator">Manga Translator</string>
     <string name="detected_text">Detected Text</string>
     <string name="translated_text">Translated Text</string>

@@ -209,6 +209,7 @@ enum class PrefName(val data: Pref) {
     ImageQuality(Pref(Location.Reader, Int::class, 0)), // 0=FAST, 1=BALANCED, 2=LANCZOS
     PagePreloadAmount(Pref(Location.Reader, Int::class, 3)),
     AlwaysShowChapterTransition(Pref(Location.Reader, Boolean::class, false)),
+    ContinuousChapters(Pref(Location.Reader, Boolean::class, false)),
     
     // Data Saver
     DataSaverMode(Pref(Location.Reader, Int::class, 0)), // 0=NONE, 1=BANDWIDTH_HERO, 2=WSRV_NL

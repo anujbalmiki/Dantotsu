@@ -968,6 +968,29 @@
                     android:valueFrom="1"
                     android:valueTo="10" />
 
+                <!-- Continuous Chapters -->
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/readerContinuousChapters"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:checked="false"
+                    android:drawableStart="@drawable/ic_round_view_column_24"
+                    android:drawablePadding="16dp"
+                    android:fontFamily="@font/poppins_bold"
+                    android:minHeight="56dp"
+                    android:text="@string/continuous_chapters"
+                    android:textColor="?attr/colorOnBackground"
+                    app:drawableTint="?attr/colorPrimary"
+                    app:thumbTint="@color/button_switch_track" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/continuous_chapters_info"
+                    android:textColor="?attr/colorOnBackground"
+                    android:textSize="12sp" />
+
                 <!-- Always Show Chapter Transition -->
                 <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/readerAlwaysShowChapterTransition"
