@@ -26,9 +26,10 @@ class DualPageAdapter(
         }
 
         if (hasTransition()) {
-            val isLoading = nextChap != null && nextChap.images().isEmpty()
+            val continuous = activity.continuousChapters
+            val isLoading = continuous && nextChap != null && nextChap.images().isEmpty()
             items.add(ReaderItem.Transition(chap, nextChap, isLoading = isLoading, isPrevious = false))
-            if (nextChap != null && nextChap.images().isNotEmpty()) {
+            if (continuous && nextChap != null && nextChap.images().isNotEmpty()) {
                 val nextDual = nextChap.dualPages()
                 nextDual.forEachIndexed { index, pair ->
                     items.add(ReaderItem.DualPage(pair.first, pair.second, nextChap, index + 1, nextDual.size))

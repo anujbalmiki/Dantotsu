@@ -373,6 +373,13 @@ class ReaderSettingsDialogFragment : BottomSheetDialogFragment() {
             }
         }
 
+        binding.readerContinuousChapters.isChecked = activity.continuousChapters
+        binding.readerContinuousChapters.setOnCheckedChangeListener { _, isChecked ->
+            PrefManager.setVal(PrefName.ContinuousChapters, isChecked)
+            activity.continuousChapters = isChecked
+            activity.applySettings()
+        }
+
         binding.readerAlwaysShowChapterTransition.isChecked = settings.alwaysShowChapterTransition
         binding.readerAlwaysShowChapterTransition.setOnCheckedChangeListener { _, isChecked ->
             settings.alwaysShowChapterTransition = isChecked

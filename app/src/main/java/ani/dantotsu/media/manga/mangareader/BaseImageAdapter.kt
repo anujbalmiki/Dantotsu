@@ -249,7 +249,7 @@ abstract class BaseImageAdapter(
                     binding.transitionLoadingContainer.visibility = View.GONE
                 }
 
-                if (settings.layout == CurrentReaderSettings.Layouts.PAGED && toChap != null) {
+                if ((settings.layout == CurrentReaderSettings.Layouts.PAGED || !activity.continuousChapters) && toChap != null) {
                     binding.transitionNextButton.visibility = View.VISIBLE
                     binding.transitionNextButton.text = itemView.context.getString(R.string.transition_read_previous)
                     binding.transitionNextButton.setIconResource(R.drawable.ic_round_arrow_back_ios_new_24)
@@ -278,7 +278,7 @@ abstract class BaseImageAdapter(
                         binding.transitionLoadingContainer.visibility = View.GONE
                     }
 
-                    if (settings.layout == CurrentReaderSettings.Layouts.PAGED) {
+                    if (settings.layout == CurrentReaderSettings.Layouts.PAGED || !activity.continuousChapters) {
                         binding.transitionNextButton.visibility = View.VISIBLE
                         binding.transitionNextButton.text = itemView.context.getString(R.string.transition_read_next)
                         binding.transitionNextButton.setIconResource(R.drawable.ic_round_arrow_forward_ios_24)
