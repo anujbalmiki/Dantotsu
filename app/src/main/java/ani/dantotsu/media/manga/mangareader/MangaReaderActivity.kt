@@ -97,6 +97,7 @@ import ani.dantotsu.settings.saving.PrefManager
 import ani.dantotsu.settings.saving.PrefName
 import ani.dantotsu.showSystemBarsRetractView
 import ani.dantotsu.snackString
+import ani.dantotsu.toast
 import ani.dantotsu.themes.ThemeManager
 import ani.dantotsu.tryWith
 import ani.dantotsu.util.customAlertDialog
@@ -197,6 +198,7 @@ class MangaReaderActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        flushPageProgress()
         if (autoScrollHelper.isRunning) {
             autoScrollHelper.stop()
         }
@@ -215,6 +217,8 @@ class MangaReaderActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        flushPageProgress()
+        pagePersistHandler.removeCallbacksAndMessages(null)
         autoScrollHelper.destroy()
         mangaCache.clear()
         goneHandler.removeCallbacksAndMessages(null)
@@ -671,6 +675,17 @@ class MangaReaderActivity : AppCompatActivity() {
             }
             binding.mangaReaderPageNumber.text =
                 if (defaultSettings.hidePageNumbers) "" else "${currentChapterPage}/$maxChapterPage"
+
+            // Long-press the page counter for a memory readout. Cheap way to tell a Java-heap
+            // problem from a native one without plugging the phone into anything.
+            binding.mangaReaderPageNumber.setOnLongClickListener {
+                val rt = Runtime.getRuntime()
+                val javaUsed = (rt.totalMemory() - rt.freeMemory()) / 1048576
+                val javaMax = rt.maxMemory() / 1048576
+                val native = android.os.Debug.getNativeHeapAllocatedSize() / 1048576
+                toast("heap $javaUsed/$javaMax MB | native $native MB | items ${imageAdapter?.itemCount ?: 0}")
+                true
+            }
 
             ani.dantotsu.widgets.continue_widget.ContinueWidget.updateReadingState(
                 this,
@@ -1280,8 +1295,43 @@ class MangaReaderActivity : AppCompatActivity() {
     }
 
     private val loading = AtomicBoolean(false)
-    private val pagePersistLock = Any()
-    private var pagePersistSeq = 0L
+    /**
+     * Page progress used to be written to SharedPreferences on every single page change, twice.
+     * Each of those `apply()` calls copies the entire preference map and rewrites the whole file,
+     * and that file holds a key per chapter per title, so a long-running install ends up copying
+     * megabytes per page turn. Scrolling a webtoon fires several page changes a second, the
+     * writer thread falls behind, the queued copies pile up, and the heap goes with it.
+     *
+     * So: keep the latest page in memory, write it once things settle, and flush on the way out.
+     */
+    private val pagePersistHandler = Handler(Looper.getMainLooper())
+    private val pagePersistDelayMs = 1500L
+    private var pendingPageNumber: Long? = null
+    private var pendingPageChapter: String? = null
+    private val pagePersistRunnable = Runnable { flushPageProgress() }
+
+    private fun schedulePageProgress(chapterNumber: String, page: Long) {
+        // A page turn inside a different chapter must not be collapsed into the pending one.
+        if (pendingPageChapter != null && pendingPageChapter != chapterNumber) flushPageProgress()
+        pendingPageChapter = chapterNumber
+        pendingPageNumber = page
+        pagePersistHandler.removeCallbacks(pagePersistRunnable)
+        pagePersistHandler.postDelayed(pagePersistRunnable, pagePersistDelayMs)
+    }
+
+    private fun flushPageProgress() {
+        val chapNum = pendingPageChapter ?: return
+        val page = pendingPageNumber ?: return
+        pendingPageChapter = null
+        pendingPageNumber = null
+        pagePersistHandler.removeCallbacks(pagePersistRunnable)
+        val values = mutableMapOf<String, Any?>("${media.id}_$chapNum" to page)
+        MediaNameAdapter.findChapterNumber(chapNum)?.let {
+            val clean = if (it % 1 == 0f) it.toInt().toString() else it.toString()
+            values["${media.id}_$clean"] = page
+        }
+        PrefManager.setCustomVals(values)
+    }
     fun updatePageNumber(pageNumber: Long) {
         var page = pageNumber
         if (directionPagedBT) {
@@ -1293,17 +1343,7 @@ class MangaReaderActivity : AppCompatActivity() {
         if (currentChapterPage != page) {
             currentChapterPage = page
             triggerEInkFlash()
-            val chapNum = chapter.number
-            val seq = synchronized(pagePersistLock) { ++pagePersistSeq }
-            scope.launch(Dispatchers.IO) {
-                // Drop stale writes so rapid page turns persist in order (last-writer-wins)
-                if (seq != synchronized(pagePersistLock) { pagePersistSeq }) return@launch
-                PrefManager.setCustomVal("${media.id}_$chapNum", page)
-                val cleanChapNum = MediaNameAdapter.findChapterNumber(chapNum)?.let {
-                    if (it % 1 == 0f) it.toInt().toString() else it.toString()
-                }
-                cleanChapNum?.let { PrefManager.setCustomVal("${media.id}_$it", page) }
-            }
+            schedulePageProgress(chapter.number, page)
             binding.mangaReaderPageNumber.text =
                 if (defaultSettings.hidePageNumbers) "" else "${currentChapterPage}/$maxChapterPage"
             if (!sliding) {
@@ -1731,11 +1771,14 @@ class MangaReaderActivity : AppCompatActivity() {
 
             // Only mark previous chapter as read and sync progress if actually moving forward
             if (isMovingForward) {
-                PrefManager.setCustomVal("${media.id}_${oldChapter.number}", maxChapterPage)
                 val cleanOldChapNum = oldChapNum?.let {
                     if (it % 1 == 0f) it.toInt().toString() else it.toString()
                 }
-                cleanOldChapNum?.let { PrefManager.setCustomVal("${media.id}_$it", maxChapterPage) }
+                val finished = mutableMapOf<String, Any?>(
+                    "${media.id}_${oldChapter.number}" to maxChapterPage
+                )
+                cleanOldChapNum?.let { finished["${media.id}_$it"] = maxChapterPage }
+                PrefManager.setCustomVals(finished)
 
                 val incognito: Boolean = PrefManager.getVal(PrefName.Incognito)
                 if (!incognito && PrefManager.getCustomVal("${media.id}_save_progress", true)
@@ -1748,14 +1791,19 @@ class MangaReaderActivity : AppCompatActivity() {
                 }
             }
 
+            // Whatever page the old chapter was on has to land before the key changes.
+            flushPageProgress()
+
             chapter = newChapter
             media.manga?.selectedChapter = chapter
             currentChapterIndex = chaptersArr.indexOf(chapter.uniqueNumber())
-            PrefManager.setCustomVal("${media.id}_current_chp", chapter.number)
             val cleanChapNum = MediaNameAdapter.findChapterNumber(chapter.number)?.let {
                 if (it % 1 == 0f) it.toInt().toString() else it.toString()
             }
-            cleanChapNum?.let { PrefManager.setCustomVal("${media.id}_current_chp_num", it) }
+            val marks = mutableMapOf<String, Any?>(
+                "${media.id}_current_chp" to chapter.number
+            )
+            cleanChapNum?.let { marks["${media.id}_current_chp_num"] = it }
 
             if (binding.mangaReaderChapterSelect.selectedItemPosition != currentChapterIndex && currentChapterIndex >= 0) {
                 binding.mangaReaderChapterSelect.setSelection(currentChapterIndex)
@@ -1767,8 +1815,9 @@ class MangaReaderActivity : AppCompatActivity() {
                 chaptersTitleArr.getOrNull(currentChapterIndex - 1) ?: ""
 
             maxChapterPage = totalPages.toLong()
-            PrefManager.setCustomVal("${media.id}_${chapter.number}_max", maxChapterPage)
-            cleanChapNum?.let { PrefManager.setCustomVal("${media.id}_${it}_max", maxChapterPage) }
+            marks["${media.id}_${chapter.number}_max"] = maxChapterPage
+            cleanChapNum?.let { marks["${media.id}_${it}_max"] = maxChapterPage }
+            PrefManager.setCustomVals(marks)
 
             // Adapter updates are illegal from inside a scroll callback, so trim on the next frame.
             binding.mangaReaderRecycler.post { trimReaderWindow() }
