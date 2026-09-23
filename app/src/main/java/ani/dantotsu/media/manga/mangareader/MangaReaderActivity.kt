@@ -1886,21 +1886,29 @@ class MangaReaderActivity : AppCompatActivity() {
         val stats = "${HeapReport.memoryLine()} | items ${imageAdapter?.itemCount ?: 0} | chapter ${chapter.number}"
         val running = HeapReport.isRunning(this)
         val ready = HeapReport.reportFile(this).exists()
+        // A second dump on a full heap froze the app into an ANR, so only offer it once the
+        // first analysis has gone quiet for three minutes.
+        val stale = running && (HeapReport.statusAgeSec(this) ?: Long.MAX_VALUE) > 180
         customAlertDialog().apply {
             setTitle("Memory")
             setMessage(
                 stats + when {
-                    running -> "\n\nHeap report is being built (${HeapReport.dumpStatus(this@MangaReaderActivity)}). Stay in the app, it takes a minute or two. If nothing comes after 5 minutes, tap Restart analysis."
+                    running -> "\n\nHeap report: ${HeapReport.status(this@MangaReaderActivity)}. Stay in the app."
                     ready -> "\n\nHeap report is ready."
                     else -> "\n\nAnalyze heap freezes the app for a few seconds, then builds a report in the background."
                 }
             )
             if (ready) setPosButton("Share report") { HeapReport.share(this@MangaReaderActivity) }
-            setNeutralButton(if (running) "Restart analysis" else "Analyze heap") {
+            if (!running || stale) setNeutralButton(if (stale) "Restart analysis" else "Analyze heap") {
                 HeapReport.capture(this@MangaReaderActivity, "Dantotsu ${BuildConfig.VERSION_NAME}\n$stats")
                 toast("Dumping heap, the app will pause briefly")
             }
-            setNegButton(getString(R.string.close))
+            setNegButton("Share threads") {
+                HeapReport.shareText(
+                    this@MangaReaderActivity,
+                    "Dantotsu ${BuildConfig.VERSION_NAME}\n$stats\n${HeapReport.threadDump()}"
+                )
+            }
             show()
         }
     }

@@ -582,6 +582,7 @@
         <service
             android:name=".util.HeapReportService"
             android:exported="false"
+            android:foregroundServiceType="dataSync"
             android:process=":heapreport" />
         <service
             android:name=".download.manga.MangaDownloaderService"
