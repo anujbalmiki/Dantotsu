@@ -89,6 +89,9 @@ class App : Application(), GraphProvider<AppGraph> {
 
     override fun onCreate() {
         super.onCreate()
+        // The heap report process only parses a dump file; the full app start-up would eat the
+        // memory it needs.
+        if (android.os.Build.VERSION.SDK_INT >= 28 && getProcessName().endsWith(":heapreport")) return
         PrefManager.init(this)
         graph.inject(this)
         Injekt.importModule(interopModule)
