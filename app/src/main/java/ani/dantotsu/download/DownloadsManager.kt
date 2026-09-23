@@ -32,7 +32,10 @@ import kotlin.math.pow
 @SingleIn(AppScope::class)
 class DownloadsManager(private val context: Context) {
     private val gson = Gson()
-    private val downloadsList = loadDownloads().toMutableList()
+    // Bulk delete removes entries from one IO coroutine per chapter while the UI reads the list;
+    // a plain ArrayList threw IndexOutOfBoundsException mid removeAll. Always mutate it through
+    // removeIf/add, which are atomic here (Kotlin's removeAll {} extension is not).
+    private val downloadsList = java.util.concurrent.CopyOnWriteArrayList(loadDownloads())
 
     val mangaDownloadedTypes: List<DownloadedType>
         get() = downloadsList.filter { it.type == MediaType.MANGA }
@@ -110,7 +113,7 @@ class DownloadsManager(private val context: Context) {
         onFinished: () -> Unit
     ) {
         removeDownloadCompat(context, downloadedType, toast)
-        downloadsList.removeAll { it.titleName == downloadedType.titleName && it.chapterName == downloadedType.chapterName }
+        downloadsList.removeIf { it.titleName == downloadedType.titleName && it.chapterName == downloadedType.chapterName }
         CoroutineScope(Dispatchers.IO).launch {
             removeDirectory(downloadedType, toast)
             withContext(Dispatchers.Main) {
@@ -157,15 +160,15 @@ class DownloadsManager(private val context: Context) {
         }
         when (type) {
             MediaType.MANGA -> {
-                downloadsList.removeAll { it.titleName == title && it.type == MediaType.MANGA }
+                downloadsList.removeIf { it.titleName == title && it.type == MediaType.MANGA }
             }
 
             MediaType.ANIME -> {
-                downloadsList.removeAll { it.titleName == title && it.type == MediaType.ANIME }
+                downloadsList.removeIf { it.titleName == title && it.type == MediaType.ANIME }
             }
 
             MediaType.NOVEL -> {
-                downloadsList.removeAll { it.titleName == title && it.type == MediaType.NOVEL }
+                downloadsList.removeIf { it.titleName == title && it.type == MediaType.NOVEL }
             }
         }
         saveDownloads()
@@ -203,13 +206,9 @@ class DownloadsManager(private val context: Context) {
             }
         }
         //now remove all downloads that do not have a folder
-        val iterator = downloadsList.iterator()
-        while (iterator.hasNext()) {
-            val download = iterator.next()
+        downloadsList.removeIf { download ->
             val downloadDir = directory?.findFolder(download.titleName)
-            if ((downloadDir?.exists() == false && download.type == type) || download.titleName.isBlank()) {
-                iterator.remove()
-            }
+            (downloadDir?.exists() == false && download.type == type) || download.titleName.isBlank()
         }
     }
 
@@ -291,7 +290,6 @@ class DownloadsManager(private val context: Context) {
         val directory =
             baseDirectory?.findFolder(downloadedType.titleName)
                 ?.findFolder(downloadedType.chapterName)
-        downloadsList.removeAll { it.titleName == downloadedType.titleName && it.chapterName == downloadedType.chapterName }
         // Check if the directory exists and delete it recursively
         if (directory?.exists() == true) {
             val deleted = directory.delete()
@@ -318,7 +316,7 @@ class DownloadsManager(private val context: Context) {
             snackString("Directory does not exist")
         }
 
-        downloadsList.removeAll { it.type == type }
+        downloadsList.removeIf { it.type == type }
         saveDownloads()
     }
 

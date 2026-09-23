@@ -638,6 +638,8 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
                 ),
                 toast = false
             ) {
+                // Deleting hundreds of folders outlives the screen if the user backs out.
+                if (!isAdded) return@removeDownload
                 chapterAdapter.deleteDownload(chapter)
                 remaining--
                 if (remaining == 0) {
