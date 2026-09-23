@@ -778,6 +778,8 @@ class AnimeWatchFragment : Fragment(), AnimeWatchAdapter.ScanlatorSelectionListe
             get() = activity as? AppCompatActivity
         override val selectedCount: Int
             get() = episodeAdapter.selectedCount
+        override val selectedDownloadedCount: Int
+            get() = episodeAdapter.selectedEpisodes().count { isEpisodeDownloaded(it) }
 
         override fun selectionNumberRange(): Pair<Float, Float>? = episodeAdapter.numberBounds()
         override fun selectAllItems() = episodeAdapter.selectAll()
@@ -810,36 +812,26 @@ class AnimeWatchFragment : Fragment(), AnimeWatchAdapter.ScanlatorSelectionListe
     }
 
     private fun deleteEpisodes(episodes: List<String>) {
-        val downloaded = episodes.filter { isEpisodeDownloaded(it) }
-        if (downloaded.isEmpty()) {
+        if (episodes.none { isEpisodeDownloaded(it) }) {
             snackString(getString(R.string.nothing_downloaded_in_selection))
             return
         }
-        val total = downloaded.size
-        var remaining = total
-        downloaded.forEach { episodeNumber ->
-            downloadManager.removeDownload(
-                DownloadedType(media.mainName(), episodeNumber, MediaType.ANIME),
-                toast = false
-            ) {
-                // Deleting hundreds of folders outlives the screen if the user backs out.
-                if (!isAdded) return@removeDownload
-                val taskName = AnimeDownloaderService.AnimeDownloadTask
-                    .getTaskName(media.mainName(), episodeNumber)
-                PrefManager.getAnimeDownloadPreferences().edit().remove(taskName).apply()
+        downloadManager.removeDownloads(MediaType.ANIME, media.mainName(), episodes) { deleted, skipped ->
+            // Deleting hundreds of folders outlives the screen if the user backs out.
+            if (!isAdded) return@removeDownloads
+            val prefs = PrefManager.getAnimeDownloadPreferences().edit()
+            episodes.forEach { episodeNumber ->
+                prefs.remove(AnimeDownloaderService.AnimeDownloadTask.getTaskName(media.mainName(), episodeNumber))
                 episodeAdapter.deleteDownload(episodeNumber)
-                remaining--
-                if (remaining == 0) {
-                    snackString(
-                        resources.getQuantityString(R.plurals.deleted_downloads, total, total)
-                    )
-                    val isDownloadedSource = model.watchSources
-                        ?.isDownloadedSource(media.selected?.sourceIndex ?: 0) == true
-                    if (isDownloadedSource) {
-                        model.invalidateSource(media.selected?.sourceIndex ?: 0)
-                        loadEpisodes(media.selected?.sourceIndex ?: 0, true)
-                    }
-                }
+            }
+            prefs.apply()
+            val done = resources.getQuantityString(R.plurals.deleted_downloads, deleted.size, deleted.size)
+            snackString(if (skipped == 0) done else "$done, ${getString(R.string.skipped_not_on_disk, skipped)}")
+            val isDownloadedSource = model.watchSources
+                ?.isDownloadedSource(media.selected?.sourceIndex ?: 0) == true
+            if (isDownloadedSource && deleted.isNotEmpty()) {
+                model.invalidateSource(media.selected?.sourceIndex ?: 0)
+                loadEpisodes(media.selected?.sourceIndex ?: 0, true)
             }
         }
     }

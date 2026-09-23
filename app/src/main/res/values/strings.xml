@@ -1488,6 +1488,7 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
         <item quantity="one">Queued %1$d for download</item>
         <item quantity="other">Queued %1$d for download</item>
     </plurals>
+    <string name="skipped_not_on_disk">%1$d not on disk, skipped</string>
     <plurals name="deleted_downloads">
         <item quantity="one">Deleted %1$d download</item>
         <item quantity="other">Deleted %1$d downloads</item>
