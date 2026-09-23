@@ -573,6 +573,8 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
             get() = activity as? AppCompatActivity
         override val selectedCount: Int
             get() = chapterAdapter.selectedCount
+        override val selectedDownloadedCount: Int
+            get() = chapterAdapter.selectedChapters().count { isChapterDownloaded(it) }
 
         override fun selectionNumberRange(): Pair<Float, Float>? = chapterAdapter.numberBounds()
         override fun selectAllItems() = chapterAdapter.selectAll()
@@ -621,40 +623,31 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
     }
 
     private fun deleteChapters(chapters: List<MangaChapter>) {
-        val downloaded = chapters.filter { isChapterDownloaded(it) }
-        if (downloaded.isEmpty()) {
+        if (chapters.none { isChapterDownloaded(it) }) {
             snackString(getString(R.string.nothing_downloaded_in_selection))
             return
         }
-        val total = downloaded.size
-        var remaining = total
-        downloaded.forEach { chapter ->
-            downloadManager.removeDownload(
-                DownloadedType(
-                    media.mainName(),
-                    chapter.number,
-                    MediaType.MANGA,
-                    scanlator = chapter.scanlator ?: "Unknown"
-                ),
-                toast = false
-            ) {
-                // Deleting hundreds of folders outlives the screen if the user backs out.
-                if (!isAdded) return@removeDownload
-                chapterAdapter.deleteDownload(chapter)
-                remaining--
-                if (remaining == 0) {
-                    snackString(
-                        resources.getQuantityString(R.plurals.deleted_downloads, total, total)
-                    )
-                    val isOffline = model.mangaReadSources
-                        ?.get(media.selected?.sourceIndex ?: 0) is OfflineMangaParser
-                    if (isOffline) {
-                        model.invalidateMangaSource(media.selected?.sourceIndex ?: 0)
-                        loadChapters(media.selected?.sourceIndex ?: 0, true)
-                    }
-                }
+        downloadManager.removeDownloads(
+            MediaType.MANGA,
+            media.mainName(),
+            chapters.map { it.number }
+        ) { deleted, skipped ->
+            // Deleting hundreds of folders outlives the screen if the user backs out.
+            if (!isAdded) return@removeDownloads
+            chapters.forEach { chapterAdapter.deleteDownload(it) }
+            snackString(deletedMessage(deleted.size, skipped))
+            val isOffline = model.mangaReadSources
+                ?.get(media.selected?.sourceIndex ?: 0) is OfflineMangaParser
+            if (isOffline && deleted.isNotEmpty()) {
+                model.invalidateMangaSource(media.selected?.sourceIndex ?: 0)
+                loadChapters(media.selected?.sourceIndex ?: 0, true)
             }
         }
+    }
+
+    private fun deletedMessage(deleted: Int, skipped: Int): String {
+        val done = resources.getQuantityString(R.plurals.deleted_downloads, deleted, deleted)
+        return if (skipped == 0) done else "$done, ${getString(R.string.skipped_not_on_disk, skipped)}"
     }
 
     fun onMangaChapterDownloadClick(i: MangaChapter) {
