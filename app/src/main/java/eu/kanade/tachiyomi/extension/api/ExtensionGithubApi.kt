@@ -37,6 +37,8 @@ import java.io.ByteArrayInputStream
 import tachiyomi.core.util.lang.withIOContext
 import uy.kohesive.injekt.injectLazy
 
+private const val MAX_REDIRECTS = 3
+
 internal class ExtensionGithubApi {
     private val networkService: NetworkHelper by injectLazy()
     private val json: Json by injectLazy()
@@ -168,7 +170,8 @@ internal class ExtensionGithubApi {
         targetUrl: String,
         cleanBase: String,
         mediaType: MediaType,
-        originalUrl: String
+        originalUrl: String,
+        depth: Int
     ): List<ExtensionJsonObject>? {
         val bodyString = responseBytes.toString(Charsets.UTF_8)
         val list = runCatching {
@@ -182,9 +185,12 @@ internal class ExtensionGithubApi {
                         it.name.contains("Update to Mihon", ignoreCase = true) ||
                         it.name.contains("switch to Animiru", ignoreCase = true)
             }
-            if (hasDeprecation && !targetUrl.endsWith("index.pb")) {
+            // When index.pb is missing the redirected call lands on this same JSON list and
+            // redirects again, forever: 40k suspended calls, each holding an open cached
+            // response, filled the heap within minutes. Cap the redirects.
+            if (hasDeprecation && !targetUrl.endsWith("index.pb") && depth < MAX_REDIRECTS) {
                 val pbUrl = "$cleanBase/index.pb"
-                return runCatching { fetchExtensions(pbUrl, mediaType, originalUrl) }.getOrElse { list }
+                return runCatching { fetchExtensions(pbUrl, mediaType, originalUrl, depth + 1) }.getOrElse { list }
             }
             return list
         }
@@ -427,7 +433,8 @@ internal class ExtensionGithubApi {
     private suspend fun fetchExtensions(
         repoUrl: String,
         mediaType: MediaType,
-        originalUrl: String = repoUrl
+        originalUrl: String = repoUrl,
+        depth: Int = 0
     ): List<ExtensionJsonObject> {
         val cleanBase = cleanRepoUrl(repoUrl)
         val candidateUrls = buildCandidateUrls(repoUrl, mediaType, cleanBase)
@@ -438,14 +445,15 @@ internal class ExtensionGithubApi {
                 val firstByte = responseBytes[0]
 
                 if (firstByte == 0x5B.toByte()) { // '[' - JSON array of extensions
-                    val arrayResult = parseJsonArrayPayload(responseBytes, targetUrl, cleanBase, mediaType, originalUrl)
+                    val arrayResult = parseJsonArrayPayload(responseBytes, targetUrl, cleanBase, mediaType, originalUrl, depth)
                     if (arrayResult != null) return arrayResult
                 } else {
                     if (firstByte == 0x7B.toByte()) { // '{'
                         val bodyString = responseBytes.toString(Charsets.UTF_8)
                         val legacyCheck = handleLegacyRepoJson(bodyString, mediaType, originalUrl)
                         when (legacyCheck) {
-                            is LegacyRepoCheck.Redirect -> return fetchExtensions(legacyCheck.nextUrl, mediaType, originalUrl)
+                            is LegacyRepoCheck.Redirect ->
+                                if (depth < MAX_REDIRECTS) return fetchExtensions(legacyCheck.nextUrl, mediaType, originalUrl, depth + 1)
                             is LegacyRepoCheck.MetaOnly -> continue
                             is LegacyRepoCheck.None -> Unit
                         }
