@@ -822,6 +822,8 @@ class AnimeWatchFragment : Fragment(), AnimeWatchAdapter.ScanlatorSelectionListe
                 DownloadedType(media.mainName(), episodeNumber, MediaType.ANIME),
                 toast = false
             ) {
+                // Deleting hundreds of folders outlives the screen if the user backs out.
+                if (!isAdded) return@removeDownload
                 val taskName = AnimeDownloaderService.AnimeDownloadTask
                     .getTaskName(media.mainName(), episodeNumber)
                 PrefManager.getAnimeDownloadPreferences().edit().remove(taskName).apply()
