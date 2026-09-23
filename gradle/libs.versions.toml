@@ -36,6 +36,7 @@ desugar-jdk-libs = "2.1.5"
 [libraries]
 leakcanary-android = { module = "com.squareup.leakcanary:leakcanary-android", version.ref = "leakcanary" }
 leakcanary-plumber = { module = "com.squareup.leakcanary:plumber-android", version.ref = "leakcanary" }
+shark-android = { module = "com.squareup.leakcanary:shark-android", version.ref = "leakcanary" }
 ffmpeg-kit = { module = "com.antonkarpenko:ffmpeg-kit-https", version.ref = "ffmpeg-kit" }
 
 

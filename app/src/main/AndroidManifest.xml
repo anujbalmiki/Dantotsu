@@ -580,6 +580,10 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         <service
+            android:name=".util.HeapReportService"
+            android:exported="false"
+            android:process=":heapreport" />
+        <service
             android:name=".download.manga.MangaDownloaderService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
