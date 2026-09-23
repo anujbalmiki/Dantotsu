@@ -237,4 +237,6 @@ dependencies {
     // LeakCanary & Plumber (Active in Debug, Alpha, and Release builds for memory leak diagnosis)
     implementation(libs.leakcanary.android)
     implementation(libs.leakcanary.plumber)
+    // Heap report: parse a heap dump on the phone and say what holds the memory
+    implementation(libs.shark.android)
 }
