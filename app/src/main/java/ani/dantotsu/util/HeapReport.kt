@@ -1,14 +1,20 @@
 package ani.dantotsu.util
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Debug
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.FileProvider
+import ani.dantotsu.R
 import shark.HeapAnalysisFailure
 import shark.HeapAnalyzer
 import shark.HeapGraph
@@ -33,7 +39,38 @@ object HeapReport {
     fun dumpFile(context: Context) = File(context.cacheDir, "heap.hprof")
     fun reportFile(context: Context) = File(context.cacheDir, "heap_report.txt")
 
+    fun statusFile(context: Context) = File(context.cacheDir, "heap_status.txt")
+
     fun isRunning(context: Context) = dumpFile(context).exists() && !reportFile(context).exists()
+
+    /** Seconds since the analysis last wrote progress, or null if it never started. */
+    fun statusAgeSec(context: Context): Long? {
+        val f = statusFile(context)
+        if (!f.exists()) return null
+        return (System.currentTimeMillis() - f.lastModified()) / 1000
+    }
+
+    fun status(context: Context): String {
+        val f = statusFile(context)
+        return if (f.exists()) "${f.readText()} (${statusAgeSec(context)}s ago)" else "waiting to start"
+    }
+
+    internal fun setStatus(context: Context, text: String) {
+        statusFile(context).writeText(text)
+    }
+
+    /** Every thread with its stack, busy ones first: shows what is still working while the reader sits idle. */
+    fun threadDump(): String {
+        val out = StringBuilder()
+        Thread.getAllStackTraces().entries
+            .sortedBy { if (it.key.state == Thread.State.RUNNABLE) 0 else 1 }
+            .forEach { (t, stack) ->
+                if (stack.isEmpty()) return@forEach
+                out.append("\n\"${t.name}\" ${t.state}\n")
+                stack.take(30).forEach { out.append("    at ").append(it).append('\n') }
+            }
+        return out.toString()
+    }
 
     fun dumpStatus(context: Context): String {
         val dump = dumpFile(context)
@@ -53,12 +90,13 @@ object HeapReport {
     fun capture(context: Context, header: String) {
         val app = context.applicationContext
         reportFile(app).delete()
+        statusFile(app).delete()
         thread(name = "heap-dump") {
             try {
                 val dump = dumpFile(app)
                 dump.delete()
                 Debug.dumpHprofData(dump.absolutePath)
-                app.startService(
+                app.startForegroundService(
                     Intent(app, HeapReportService::class.java).putExtra(EXTRA_HEADER, header)
                 )
             } catch (e: Throwable) {
@@ -70,11 +108,15 @@ object HeapReport {
 
     fun share(context: Context) {
         val report = reportFile(context)
-        if (!report.exists()) return
+        if (report.exists()) shareText(context, report.readText(), report)
+    }
+
+    fun shareText(context: Context, text: String, file: File? = null) {
+        val report = file ?: File(context.cacheDir, "threads.txt").also { it.writeText(text) }
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "Dantotsu heap report")
-            putExtra(Intent.EXTRA_TEXT, report.readText().take(90_000))
+            putExtra(Intent.EXTRA_SUBJECT, "Dantotsu memory report")
+            putExtra(Intent.EXTRA_TEXT, text.take(90_000))
             try {
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", report)
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -82,17 +124,22 @@ object HeapReport {
             } catch (_: Exception) {
             }
         }
-        context.startActivity(Intent.createChooser(intent, "Share heap report"))
+        context.startActivity(Intent.createChooser(intent, "Share"))
     }
 
-    fun analyze(hprof: File, header: String): String {
+    fun analyze(context: Context, hprof: File, header: String): String {
         val out = StringBuilder(header).append("\n\n")
+        setStatus(context, "indexing ${hprof.length() / MB} MB dump")
         hprof.openHeapGraph().use { graph ->
             val picks = LinkedHashMap<Long, String>()
+            setStatus(context, "counting objects")
             histogram(graph, out, picks)
             watched(graph, out, picks)
             bitmaps(graph, out, picks)
+            // If the path search below gets the process killed, the counts are still worth having.
+            File(context.cacheDir, "heap_partial.txt").writeText(out.toString() + "\n(paths not finished)\n")
 
+            setStatus(context, "finding paths for ${picks.size} objects")
             out.append("\n=== Paths to GC root (${picks.size} objects) ===\n")
             picks.forEach { (id, why) -> out.append("@$id  $why\n") }
             val analysis = HeapAnalyzer(OnAnalysisProgressListener.NO_OP).analyze(
@@ -102,7 +149,7 @@ object HeapReport {
                     override fun findLeakingObjectIds(graph: HeapGraph) = picks.keys
                 },
                 referenceMatchers = AndroidReferenceMatchers.appDefaults,
-                computeRetainedHeapSize = true,
+                computeRetainedHeapSize = false,
                 objectInspectors = AndroidObjectInspectors.appDefaults,
             )
             if (analysis is HeapAnalysisFailure) {
@@ -253,15 +300,31 @@ class HeapReportService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Foreground so the low-memory killer leaves this process alone while the reader hogs RAM.
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL, "Heap report", NotificationManager.IMPORTANCE_LOW)
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_round_info_24)
+            .setContentTitle("Building heap report")
+            .setOngoing(true)
+            .build()
+        ServiceCompat.startForeground(
+            this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+
         val header = intent?.getStringExtra(HeapReport.EXTRA_HEADER) ?: ""
         thread(name = "heap-report") {
             val dump = HeapReport.dumpFile(this)
             val report = try {
-                HeapReport.analyze(dump, header)
+                HeapReport.analyze(this, dump, header)
             } catch (e: Throwable) {
-                "$header\n\nAnalysis failed: ${e.stackTraceToString()}"
+                val partial = File(cacheDir, "heap_partial.txt").takeIf { it.exists() }?.readText() ?: header
+                "$partial\n\nAnalysis failed: ${e.stackTraceToString()}"
             }
             HeapReport.reportFile(this).writeText(report)
+            HeapReport.setStatus(this, "done")
             dump.delete()
             Handler(Looper.getMainLooper()).post {
                 Toast.makeText(
@@ -269,9 +332,15 @@ class HeapReportService : Service() {
                     "Heap report ready. Long-press the page counter to share it.",
                     Toast.LENGTH_LONG
                 ).show()
+                ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
             }
         }
         return START_NOT_STICKY
+    }
+
+    private companion object {
+        const val CHANNEL = "heap_report"
+        const val NOTIFICATION_ID = 7342
     }
 }
