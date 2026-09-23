@@ -35,6 +35,12 @@ object HeapReport {
 
     fun isRunning(context: Context) = dumpFile(context).exists() && !reportFile(context).exists()
 
+    fun dumpStatus(context: Context): String {
+        val dump = dumpFile(context)
+        val ageSec = (System.currentTimeMillis() - dump.lastModified()) / 1000
+        return "dump ${dump.length() / MB} MB, ${ageSec}s ago"
+    }
+
     fun memoryLine(): String {
         val rt = Runtime.getRuntime()
         val javaUsed = (rt.totalMemory() - rt.freeMemory()) / MB

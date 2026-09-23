@@ -1890,13 +1890,13 @@ class MangaReaderActivity : AppCompatActivity() {
             setTitle("Memory")
             setMessage(
                 stats + when {
-                    running -> "\n\nHeap report is being built. Stay in the app, it takes a minute or two."
+                    running -> "\n\nHeap report is being built (${HeapReport.dumpStatus(this@MangaReaderActivity)}). Stay in the app, it takes a minute or two. If nothing comes after 5 minutes, tap Restart analysis."
                     ready -> "\n\nHeap report is ready."
                     else -> "\n\nAnalyze heap freezes the app for a few seconds, then builds a report in the background."
                 }
             )
             if (ready) setPosButton("Share report") { HeapReport.share(this@MangaReaderActivity) }
-            if (!running) setNeutralButton("Analyze heap") {
+            setNeutralButton(if (running) "Restart analysis" else "Analyze heap") {
                 HeapReport.capture(this@MangaReaderActivity, "Dantotsu ${BuildConfig.VERSION_NAME}\n$stats")
                 toast("Dumping heap, the app will pause briefly")
             }
