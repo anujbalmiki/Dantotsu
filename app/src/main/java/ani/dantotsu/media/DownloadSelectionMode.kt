@@ -26,6 +26,9 @@ class DownloadSelectionMode(private val target: Target) : ActionMode.Callback {
         /** How many items are currently ticked. */
         val selectedCount: Int
 
+        /** How many of the ticked items are downloaded; only those get deleted. */
+        val selectedDownloadedCount: Int
+
         /** Lowest and highest parsed numbers in the list, used to seed the range dialog. */
         fun selectionNumberRange(): Pair<Float, Float>?
 
@@ -98,8 +101,12 @@ class DownloadSelectionMode(private val target: Target) : ActionMode.Callback {
             }
 
             R.id.action_delete_selected -> {
-                val count = target.selectedCount
-                if (count == 0) return true
+                if (target.selectedCount == 0) return true
+                val count = target.selectedDownloadedCount
+                if (count == 0) {
+                    toast(activity.getString(R.string.nothing_downloaded_in_selection))
+                    return true
+                }
                 activity.customAlertDialog().apply {
                     setTitle(activity.getString(R.string.delete_selected))
                     setMessage(
@@ -249,8 +256,14 @@ fun showDownloadManagerDialog(
     }
 
     view.findViewById<MaterialButton>(R.id.rangeDelete).setOnClickListener {
-        val ticked = tickRange() ?: return@setOnClickListener
-        confirmDelete(ticked)
+        tickRange() ?: return@setOnClickListener
+        val downloaded = target.selectedDownloadedCount
+        if (downloaded == 0) {
+            target.clearItemSelection()
+            toast(activity.getString(R.string.nothing_downloaded_in_selection))
+            return@setOnClickListener
+        }
+        confirmDelete(downloaded)
     }
 
     view.findViewById<MaterialButton>(R.id.rangeAllDownloaded).setOnClickListener {
