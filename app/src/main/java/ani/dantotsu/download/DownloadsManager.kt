@@ -123,6 +123,38 @@ class DownloadsManager(private val context: Context) {
         saveDownloads()
     }
 
+    /**
+     * Deletes several downloads of one title in one background pass. The title folder is listed
+     * once and only chapters with a folder actually on disk are deleted; the rest (picked by
+     * mistake, or index entries whose files are already gone) are skipped. Their index entries
+     * are dropped either way. [onFinished] runs on the main thread with the deleted chapter names
+     * and the number skipped.
+     */
+    fun removeDownloads(
+        type: MediaType,
+        title: String,
+        chapters: List<String>,
+        onFinished: (deleted: List<String>, skipped: Int) -> Unit
+    ) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val onDisk = findSubDirectory(context, type, title)
+                ?.listFiles()
+                ?.filter { it.isDirectory && it.name != null }
+                ?.associateBy { it.name!! }
+                .orEmpty()
+            val deleted = ArrayList<String>()
+            chapters.forEach { chapter ->
+                removeDownloadCompat(context, DownloadedType(title, chapter, type), false)
+                val dir = onDisk[chapter.findValidName()] ?: onDisk[chapter]
+                if (dir != null && dir.delete()) deleted.add(chapter)
+            }
+            val picked = chapters.toHashSet()
+            downloadsList.removeIf { it.type == type && it.titleName == title && it.chapterName in picked }
+            saveDownloads()
+            withContext(Dispatchers.Main) { onFinished(deleted, chapters.size - deleted.size) }
+        }
+    }
+
     fun getSize(downloadedType: DownloadedType): Double {
         val index = downloadsList.indexOfFirst { it.titleName == downloadedType.titleName && it.chapterName == downloadedType.chapterName }
         if (index == -1) return 0.0
