@@ -307,6 +307,32 @@ object PrefManager {
         }
     }
 
+    /**
+     * Every [setCustomVal] is its own `apply()`, and each `apply()` copies the whole preference
+     * map and rewrites the whole file. On a file with thousands of reading-progress keys that is
+     * megabytes of garbage per call, so writes that belong together go through here as one.
+     */
+    fun setCustomVals(values: Map<String, Any?>) {
+        if (values.isEmpty()) return
+        val serializeLater = mutableMapOf<String, Any>()
+        with(irrelevantPreferences!!.edit()) {
+            values.forEach { (key, value) ->
+                when (value) {
+                    is Boolean -> putBoolean(key, value)
+                    is Int -> putInt(key, value)
+                    is Float -> putFloat(key, value)
+                    is Long -> putLong(key, value)
+                    is String -> putString(key, value)
+                    is Set<*> -> putStringSet(key, value.map { it.toString() }.toSet())
+                    null -> remove(key)
+                    else -> serializeLater[key] = value
+                }
+            }
+            apply()
+        }
+        serializeLater.forEach { (key, value) -> serializeClass(key, value, Location.Irrelevant) }
+    }
+
     fun removeCustomVal(key: String) {
         //for custom force irrelevant
         with(irrelevantPreferences!!.edit()) {
