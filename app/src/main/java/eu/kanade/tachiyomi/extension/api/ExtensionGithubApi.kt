@@ -37,6 +37,8 @@ import java.io.ByteArrayInputStream
 import tachiyomi.core.util.lang.withIOContext
 import uy.kohesive.injekt.injectLazy
 
+private const val MAX_REDIRECTS = 3
+
 internal class ExtensionGithubApi {
     private val networkService: NetworkHelper by injectLazy()
     private val json: Json by injectLazy()
@@ -119,7 +121,8 @@ internal class ExtensionGithubApi {
     private suspend fun fetchExtensions(
         repoUrl: String,
         mediaType: MediaType,
-        originalUrl: String = repoUrl
+        originalUrl: String = repoUrl,
+        depth: Int = 0
     ): List<ExtensionJsonObject> {
         val cleanBase = cleanRepoUrl(repoUrl)
         val candidateUrls = mutableListOf<String>()
@@ -183,9 +186,12 @@ internal class ExtensionGithubApi {
                         val hasDeprecation = mediaType == MediaType.MANGA && list.any {
                             it.pkg.contains("keiyoushi") || it.name.contains("Outdated App", ignoreCase = true) || it.name.contains("Update to Mihon", ignoreCase = true)
                         }
-                        if (hasDeprecation && !targetUrl.endsWith("index.pb")) {
+                        // When index.pb is missing the redirected call lands on this same JSON list
+                        // and redirects again, forever: 40k suspended calls, each holding an open
+                        // cached response, filled the heap within minutes. Cap the redirects.
+                        if (hasDeprecation && !targetUrl.endsWith("index.pb") && depth < MAX_REDIRECTS) {
                             val pbUrl = "$cleanBase/index.pb"
-                            return runCatching { fetchExtensions(pbUrl, mediaType, originalUrl) }.getOrElse { list }
+                            return runCatching { fetchExtensions(pbUrl, mediaType, originalUrl, depth + 1) }.getOrElse { list }
                         }
                         return list
                     }
@@ -207,9 +213,9 @@ internal class ExtensionGithubApi {
                                 )
                             }
                             val nextUrl = legacyRepo?.indexV2
-                            if (nextUrl != null) {
+                            if (nextUrl != null && depth < MAX_REDIRECTS) {
                                 updateStoreUrl(originalUrl, nextUrl, mediaType)
-                                return fetchExtensions(nextUrl, mediaType, originalUrl)
+                                return fetchExtensions(nextUrl, mediaType, originalUrl, depth + 1)
                             }
                         }
 
