@@ -98,6 +98,8 @@ import ani.dantotsu.settings.saving.PrefName
 import ani.dantotsu.showSystemBarsRetractView
 import ani.dantotsu.snackString
 import ani.dantotsu.toast
+import ani.dantotsu.BuildConfig
+import ani.dantotsu.util.HeapReport
 import ani.dantotsu.themes.ThemeManager
 import ani.dantotsu.tryWith
 import ani.dantotsu.util.customAlertDialog
@@ -676,14 +678,10 @@ class MangaReaderActivity : AppCompatActivity() {
             binding.mangaReaderPageNumber.text =
                 if (defaultSettings.hidePageNumbers) "" else "${currentChapterPage}/$maxChapterPage"
 
-            // Long-press the page counter for a memory readout. Cheap way to tell a Java-heap
-            // problem from a native one without plugging the phone into anything.
+            // Long-press the page counter for a memory readout, and a heap report that can be
+            // shared back without plugging the phone into anything.
             binding.mangaReaderPageNumber.setOnLongClickListener {
-                val rt = Runtime.getRuntime()
-                val javaUsed = (rt.totalMemory() - rt.freeMemory()) / 1048576
-                val javaMax = rt.maxMemory() / 1048576
-                val native = android.os.Debug.getNativeHeapAllocatedSize() / 1048576
-                toast("heap $javaUsed/$javaMax MB | native $native MB | items ${imageAdapter?.itemCount ?: 0}")
+                showMemoryDialog()
                 true
             }
 
@@ -1881,6 +1879,29 @@ class MangaReaderActivity : AppCompatActivity() {
                 Glide.get(this).trimMemory(level)
             } catch (_: Exception) {
             }
+        }
+    }
+
+    private fun showMemoryDialog() {
+        val stats = "${HeapReport.memoryLine()} | items ${imageAdapter?.itemCount ?: 0} | chapter ${chapter.number}"
+        val running = HeapReport.isRunning(this)
+        val ready = HeapReport.reportFile(this).exists()
+        customAlertDialog().apply {
+            setTitle("Memory")
+            setMessage(
+                stats + when {
+                    running -> "\n\nHeap report is being built. Stay in the app, it takes a minute or two."
+                    ready -> "\n\nHeap report is ready."
+                    else -> "\n\nAnalyze heap freezes the app for a few seconds, then builds a report in the background."
+                }
+            )
+            if (ready) setPosButton("Share report") { HeapReport.share(this@MangaReaderActivity) }
+            if (!running) setNeutralButton("Analyze heap") {
+                HeapReport.capture(this@MangaReaderActivity, "Dantotsu ${BuildConfig.VERSION_NAME}\n$stats")
+                toast("Dumping heap, the app will pause briefly")
+            }
+            setNegButton(getString(R.string.close))
+            show()
         }
     }
 
