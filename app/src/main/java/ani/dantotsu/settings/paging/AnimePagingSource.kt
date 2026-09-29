@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import ani.dantotsu.R
 import ani.dantotsu.databinding.ItemExtensionAllBinding
 import ani.dantotsu.others.LanguageMapper
+import ani.dantotsu.parsers.mangayomi.MangayomiExtensions
 import ani.dantotsu.settings.saving.PrefManager
 import ani.dantotsu.settings.saving.PrefName
 import com.bumptech.glide.Glide
@@ -64,9 +65,30 @@ class AnimeExtensionsViewModel(
     val pagerFlow: Flow<PagingData<AnimeExtension.Available>> = combine(
         animeExtensionManager.availableExtensionsFlow,
         animeExtensionManager.installedExtensionsFlow,
+        MangayomiExtensions.available,
+        MangayomiExtensions.installed,
         searchQuery
-    ) { available, installed, query ->
-        Triple(available, installed, query)
+    ) { available, installed, mangayomi, mangayomiInstalled, query ->
+        val installedIds = mangayomiInstalled.map { it.id }.toSet()
+        val mangayomiAvailable = mangayomi.filter { it.id !in installedIds }.map {
+            AnimeExtension.Available(
+                name = it.name,
+                pkgName = it.pkgName,
+                versionName = it.version,
+                versionCode = 0L,
+                libVersion = 0.0,
+                lang = it.lang,
+                isNsfw = it.isNsfw,
+                hasReadme = false,
+                hasChangelog = false,
+                sources = emptyList(),
+                apkName = "",
+                iconUrl = it.iconUrl,
+                repository = it.repo,
+                repoName = "Mangayomi",
+            )
+        }
+        Triple(available + mangayomiAvailable, installed, query)
     }.flatMapLatest { (available, installed, query) ->
         Pager(
             PagingConfig(
