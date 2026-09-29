@@ -11,6 +11,9 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import ani.dantotsu.databinding.FragmentExtensionsBinding
+import ani.dantotsu.parsers.mangayomi.MangayomiExtensions
+import ani.dantotsu.parsers.mangayomi.MangayomiSource
+import ani.dantotsu.snackString
 import ani.dantotsu.settings.paging.AnimeExtensionAdapter
 import ani.dantotsu.settings.paging.AnimeExtensionsViewModel
 import ani.dantotsu.settings.paging.AnimeExtensionsViewModelFactory
@@ -78,6 +81,15 @@ class AnimeExtensionsFragment : Fragment(),
     }
 
     override fun onInstallClick(pkg: AnimeExtension.Available) {
+        if (pkg.pkgName.startsWith(MangayomiSource.PKG_PREFIX)) {
+            val source = MangayomiExtensions.find(pkg.pkgName) ?: return
+            lifecycleScope.launch {
+                val ok = MangayomiExtensions.install(source)
+                snackString(if (ok) "Extension installed" else "Installation failed")
+                viewModel.invalidatePager()
+            }
+            return
+        }
         val context = requireContext()
         if (isAdded) {
             val notificationManager =

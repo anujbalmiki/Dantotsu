@@ -152,6 +152,13 @@ class AnimeExtensionManager(
         _availableAnimeExtensionsFlow.value = extensions
         updatedInstalledAnimeExtensionsStatuses(extensions)
         setupAvailableAnimeExtensionsSourcesDataMap(extensions)
+
+        // Mangayomi JS repos live in the same anime repo list; they are skipped above.
+        ani.dantotsu.parsers.mangayomi.MangayomiExtensions.refresh(
+            ani.dantotsu.settings.saving.PrefManager.getVal<Set<String>>(
+                ani.dantotsu.settings.saving.PrefName.AnimeExtensionRepos
+            )
+        )
     }
 
     /**
