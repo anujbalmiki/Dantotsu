@@ -227,6 +227,10 @@ dependencies {
     implementation(libs.bundles.rx)
     implementation(libs.bundles.okhttp)
     implementation(libs.okio)
+    // QuickJS with async/await, for Mangayomi JS extensions. Classes from the quickjs-kt-android
+    // 1.0.15 AAR; its libquickjs.so ships renamed as jniLibs/<abi>/libquickjskt.so because
+    // app.cash.quickjs (needed by Aniyomi extensions) uses the same file name.
+    implementation(files("libs/quickjs-kt-android-1.0.15.jar"))
 
     // Archive support (local source)
     implementation(libs.libarchive)

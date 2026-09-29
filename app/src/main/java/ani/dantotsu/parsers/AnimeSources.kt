@@ -2,10 +2,14 @@ package ani.dantotsu.parsers
 
 import ani.dantotsu.Lazier
 import ani.dantotsu.lazyList
+import ani.dantotsu.parsers.mangayomi.MangayomiAnimeParser
+import ani.dantotsu.parsers.mangayomi.MangayomiExtensions
+import ani.dantotsu.parsers.mangayomi.MangayomiSource
 import ani.dantotsu.settings.saving.PrefManager
 import ani.dantotsu.settings.saving.PrefName
 import eu.kanade.tachiyomi.extension.anime.model.AnimeExtension
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
 object AnimeSources : WatchSources() {
@@ -24,7 +28,8 @@ object AnimeSources : WatchSources() {
 
         val initialExtensions = fromExtensions.value
         list = sortPinnedAnimeSources(
-            createParsersFromExtensions(initialExtensions),
+            createParsersFromExtensions(initialExtensions) +
+                    createMangayomiParsers(MangayomiExtensions.installed.value),
             pinnedAnimeSources
         ) + listOf(
             Lazier({ TorrentAnimeParser() }, "Torrent"),
@@ -33,9 +38,9 @@ object AnimeSources : WatchSources() {
         )
         isInitialized = true
 
-        fromExtensions.collect { extensions ->
+        fromExtensions.combine(MangayomiExtensions.installed) { a, m -> a to m }.collect { (extensions, mangayomi) ->
             list = sortPinnedAnimeSources(
-                createParsersFromExtensions(extensions),
+                createParsersFromExtensions(extensions) + createMangayomiParsers(mangayomi),
                 pinnedAnimeSources
             ) + listOf(
                 Lazier({ TorrentAnimeParser() }, "Torrent"),
@@ -60,6 +65,9 @@ object AnimeSources : WatchSources() {
             Lazier({ DynamicAnimeParser(extension) }, name)
         }
     }
+
+    private fun createMangayomiParsers(sources: List<MangayomiSource>): List<Lazier<BaseParser>> =
+        sources.map { Lazier({ MangayomiAnimeParser(it) }, it.name) }
 
     private fun sortPinnedAnimeSources(
         sources: List<Lazier<BaseParser>>,
