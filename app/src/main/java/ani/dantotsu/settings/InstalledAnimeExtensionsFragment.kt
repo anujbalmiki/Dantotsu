@@ -26,6 +26,8 @@ import ani.dantotsu.connections.crashlytics.CrashlyticsInterface
 import ani.dantotsu.databinding.FragmentExtensionsBinding
 import ani.dantotsu.others.LanguageMapper.Companion.getLanguageName
 import ani.dantotsu.parsers.AnimeSources
+import ani.dantotsu.parsers.mangayomi.MangayomiExtensions
+import ani.dantotsu.parsers.mangayomi.MangayomiSource
 import ani.dantotsu.settings.extensionprefs.AnimeSourcePreferencesFragment
 import ani.dantotsu.settings.saving.PrefManager
 import ani.dantotsu.settings.saving.PrefName
@@ -33,12 +35,14 @@ import ani.dantotsu.snackString
 import ani.dantotsu.util.Logger
 import ani.dantotsu.util.customAlertDialog
 
+import com.bumptech.glide.Glide
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputLayout
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.extension.anime.AnimeExtensionManager
 import eu.kanade.tachiyomi.extension.anime.model.AnimeExtension
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import rx.android.schedulers.AndroidSchedulers
 import uy.kohesive.injekt.Injekt
@@ -108,11 +112,19 @@ class InstalledAnimeExtensionsFragment : Fragment(), SearchQueryHandler {
         },
         { pkg ->
             if (isAdded) {
-                animeExtensionManager.uninstallExtension(pkg.pkgName)
+                val mangayomi = MangayomiExtensions.find(pkg.pkgName)
+                if (mangayomi != null) MangayomiExtensions.uninstall(mangayomi.id)
+                else animeExtensionManager.uninstallExtension(pkg.pkgName)
                 snackString("Extension uninstalled")
             }
         }, { pkg ->
-            if (isAdded) {
+            val mangayomi = MangayomiExtensions.available.value.find { it.pkgName == pkg.pkgName }
+            if (isAdded && pkg.pkgName.startsWith(MangayomiSource.PKG_PREFIX)) {
+                if (mangayomi == null || !pkg.hasUpdate) snackString("No update available")
+                else lifecycleScope.launch {
+                    snackString(if (MangayomiExtensions.install(mangayomi)) "Extension updated" else "Update failed")
+                }
+            } else if (isAdded) {
                 val context = requireContext()
                 val notificationManager =
                     context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -219,13 +231,36 @@ class InstalledAnimeExtensionsFragment : Fragment(), SearchQueryHandler {
 
 
         lifecycleScope.launch {
-            animeExtensionManager.installedExtensionsFlow.collect { extensions ->
+            animeExtensionManager.installedExtensionsFlow.combine(
+                MangayomiExtensions.installed.combine(MangayomiExtensions.available) { installed, _ -> installed }
+            ) { apk, js -> apk + js.map(::asInstalled) }.collect { extensions ->
+                allInstalled = extensions
                 extensionsAdapter.updateData(sortToAnimeSourcesList(extensions))
             }
         }
         return binding.root
     }
 
+
+    private var allInstalled: List<AnimeExtension.Installed> = emptyList()
+
+    private fun asInstalled(source: MangayomiSource) = AnimeExtension.Installed(
+        name = source.name,
+        pkgName = source.pkgName,
+        versionName = source.version,
+        versionCode = 0L,
+        libVersion = 0.0,
+        lang = source.lang,
+        isNsfw = source.isNsfw,
+        hasReadme = false,
+        hasChangelog = false,
+        pkgFactory = null,
+        sources = emptyList(),
+        icon = null,
+        hasUpdate = MangayomiExtensions.hasUpdate(source),
+        repository = source.repo,
+        repoName = "Mangayomi",
+    )
 
     private fun sortToAnimeSourcesList(inpt: List<AnimeExtension.Installed>): List<AnimeExtension.Installed> {
         val sourcesMap = inpt.associateBy { it.name }
@@ -242,7 +277,7 @@ class InstalledAnimeExtensionsFragment : Fragment(), SearchQueryHandler {
     override fun updateContentBasedOnQuery(query: String?) {
         extensionsAdapter.filter(
             query ?: "",
-            sortToAnimeSourcesList(animeExtensionManager.installedExtensionsFlow.value)
+            sortToAnimeSourcesList(allInstalled)
         )
     }
 
@@ -291,7 +326,12 @@ class InstalledAnimeExtensionsFragment : Fragment(), SearchQueryHandler {
             val versionText = listOf(lang, displayVersion, nsfw, repoBadge).filter { it.isNotBlank() }.joinToString(" ")
             holder.extensionVersionTextView.text = versionText
             if (!skipIcons) {
-                holder.extensionIconImageView.setImageDrawable(extension.icon)
+                val iconUrl = MangayomiExtensions.find(extension.pkgName)?.iconUrl
+                if (extension.icon == null && iconUrl != null) {
+                    Glide.with(holder.itemView).load(iconUrl).into(holder.extensionIconImageView)
+                } else {
+                    holder.extensionIconImageView.setImageDrawable(extension.icon)
+                }
             }
             if (extension.hasUpdate) {
                 holder.updateView.isVisible = true
