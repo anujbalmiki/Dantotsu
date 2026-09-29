@@ -179,3 +179,11 @@
 -dontwarn com.google.mlkit.vision.**
 -keep class com.google.android.gms.internal.mlkit_vision_text** { *; }
 -dontwarn com.google.android.gms.internal.mlkit_vision_text**
+
+# quickjs-kt (Mangayomi JS extensions), from the AAR's consumer rules
+-keep,allowoptimization class com.dokar.quickjs.QuickJs { *; }
+-keep,allowoptimization class com.dokar.quickjs.QuickJsException { *; }
+-keep,allowoptimization class com.dokar.quickjs.binding.JsProperty { *; }
+-keep,allowoptimization class com.dokar.quickjs.binding.JsFunction { *; }
+-keep,allowoptimization class com.dokar.quickjs.binding.JsObject { *; }
+-keep,allowoptimization class kotlin.UByteArray
