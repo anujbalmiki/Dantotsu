@@ -69,6 +69,8 @@ internal class ExtensionGithubApi {
         val badge = ani.dantotsu.parsers.ExtensionRepoMetaHelper.getRepoBadgeName(repository)
         return this
             .filter {
+                // Entries without a package (a Mangayomi index, say) have no APK to install.
+                if (it.pkg.isBlank()) return@filter false
                 val libVersion = it.extractLibVersion()
                 val majorLibVersion = libVersion.toInt()
                 majorLibVersion >= ExtensionLoader.ANIME_LIB_VERSION_MIN && majorLibVersion <= ExtensionLoader.ANIME_LIB_VERSION_MAX
