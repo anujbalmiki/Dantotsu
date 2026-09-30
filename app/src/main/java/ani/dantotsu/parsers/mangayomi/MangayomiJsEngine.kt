@@ -57,6 +57,15 @@ class MangayomiJsEngine(
     private val sourceCode: String,
     private val host: MangayomiHost,
 ) {
+    /**
+     * The requests the last [call] made, one line each with the status or the error. Extensions
+     * usually swallow network errors and just return nothing, so this is the only way to see why.
+     * ponytail: shared by concurrent calls; per-call traces if that ever confuses a report.
+     */
+    @Volatile
+    var lastTrace: List<String> = emptyList()
+        private set
+
     /** Calls `extention.<method>(...args)` and returns its result as JSON. */
     suspend fun call(method: String, args: JsonArray = JsonArray(emptyList())): String =
         withContext(Dispatchers.IO) {
@@ -68,6 +77,7 @@ class MangayomiJsEngine(
 
             var result: String? = null
             var error: String? = null
+            val trace = java.util.Collections.synchronizedList(ArrayList<String>())
 
             quickJs(Dispatchers.IO) {
                 function("__result") { result = it[0] as String? }
@@ -117,7 +127,7 @@ class MangayomiJsEngine(
                 function("__parseDates") { a -> parseDates(a[0] as String, a[1] as String?, a[2] as String?) }
 
                 asyncFunction("__http") { a ->
-                    http(a[0] as String, a[1] as String, a[2] as String?, a[3] as String?)
+                    http(a[0] as String, a[1] as String, a[2] as String?, a[3] as String?, trace)
                 }
                 asyncFunction("__sleep") { delay((it[0] as Number?)?.toLong() ?: 0L); null }
 
@@ -140,11 +150,18 @@ class MangayomiJsEngine(
                     filename = "call.js"
                 )
             }
+            lastTrace = trace.toList()
             error?.let { throw MangayomiException("$method: $it") }
             result ?: throw MangayomiException("$method returned nothing")
         }
 
-    private suspend fun http(method: String, url: String, headersJson: String?, bodyJson: String?): String {
+    private suspend fun http(
+        method: String,
+        url: String,
+        headersJson: String?,
+        bodyJson: String?,
+        trace: MutableList<String>,
+    ): String {
         val headers = headersJson?.let { parseObject(it) }.orEmpty()
             .mapValues { (_, v) -> (v as? JsonPrimitive)?.contentOrNull ?: v.toString() }
         val contentType = headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value
@@ -163,8 +180,16 @@ class MangayomiJsEngine(
             }
         }
         val request = Request.Builder().url(url).headers(headers.toHeaders()).method(method, body).build()
-        return host.http.newCall(request).execute().use { res ->
+        val response = try {
+            host.http.newCall(request).execute()
+        } catch (e: Exception) {
+            trace += "$method $url -> ${e.javaClass.simpleName}: ${e.message}"
+            host.log("$method $url failed: $e")
+            throw e
+        }
+        return response.use { res ->
             val text = res.body.string()
+            trace += "$method $url -> ${res.code} (${text.length} chars)"
             buildJsonObject {
                 put("body", text)
                 put("statusCode", res.code)
