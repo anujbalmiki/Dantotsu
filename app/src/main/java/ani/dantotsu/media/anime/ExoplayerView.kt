@@ -68,6 +68,7 @@ import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import ani.dantotsu.NoPaddingArrayAdapter
 import ani.dantotsu.R
+import ani.dantotsu.Refresh
 import ani.dantotsu.connections.anilist.Anilist
 import ani.dantotsu.connections.crashlytics.CrashlyticsInterface
 import ani.dantotsu.connections.discord.Discord
@@ -985,6 +986,8 @@ class ExoplayerView : AppCompatActivity(), Player.Listener {
         if (list.contains(media.id)) list.remove(media.id)
         list.add(media.id)
         PrefManager.setCustomVal("continueAnimeList", list)
+        // Home's Continue Watching lists titles opened from an extension once they are watched.
+        if (media.id < 0) Refresh.activity[1]?.postValue(true)
     }
 
     private fun isMatchingSubtitleLanguage(language: String, lang: String): Boolean {
