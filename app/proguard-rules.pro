@@ -181,3 +181,6 @@
 -keep,allowoptimization class com.dokar.quickjs.binding.JsFunction { *; }
 -keep,allowoptimization class com.dokar.quickjs.binding.JsObject { *; }
 -keep,allowoptimization class kotlin.UByteArray
+
+# nextlib (vendored jar, rules from its AAR)
+-keep class androidx.media3.decoder.VideoDecoderOutputBuffer { *; }

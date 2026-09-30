@@ -126,13 +126,6 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
-            pickFirsts.add("**/libavcodec.so")
-            pickFirsts.add("**/libavdevice.so")
-            pickFirsts.add("**/libavfilter.so")
-            pickFirsts.add("**/libavformat.so")
-            pickFirsts.add("**/libavutil.so")
-            pickFirsts.add("**/libswresample.so")
-            pickFirsts.add("**/libswscale.so")
         }
     }
 
@@ -158,8 +151,12 @@ configurations.all {
 }
 
 dependencies {
-    // ffmpeg-kit (must precede media3 so complete native binaries with av_log_default_callback are chosen by pickFirsts)
+    // ffmpeg-kit (ffmpeg 8, for downloads)
     implementation(libs.ffmpeg.kit)
+    // nextlib 0.8.4 FFmpeg decoders for the player. Classes from its AAR; its ffmpeg 6 libs clash by
+    // file name with ffmpeg-kit's, so they ship renamed in jniLibs/<abi> (libnxutil/nxcodec/
+    // nxresample/nxscale.so, with libmedia3ext.so's DT_NEEDED patched to match).
+    implementation(files("libs/nextlib-media3ext-0.8.4.jar"))
 
     // Media3 & decoders
     implementation(libs.bundles.media3)
