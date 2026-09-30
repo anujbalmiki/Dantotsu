@@ -43,6 +43,8 @@ import ani.dantotsu.initActivity
 import ani.dantotsu.loadImage
 import ani.dantotsu.media.anime.AnimeWatchFragment
 import ani.dantotsu.media.comments.CommentsFragment
+import ani.dantotsu.media.extension.checkExtensionTitleOnAniList
+import ani.dantotsu.media.extension.setupExtensionTitle
 import ani.dantotsu.notifications.comment.MediaNameFetch
 import ani.dantotsu.media.manga.MangaReadFragment
 import ani.dantotsu.media.novel.NovelReadFragment
@@ -363,7 +365,7 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
             total()
             if (media.id < 0) {
                 binding.mediaAddToList.setText(R.string.not_on_anilist)
-                binding.mediaAddToList.setOnClickListener { snackString(getString(R.string.not_on_anilist_desc)) }
+                setupExtensionTitle(media.id, binding.mediaAddToList)
                 return
             }
             binding.mediaAddToList.setOnClickListener {
@@ -387,6 +389,7 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
             }
         }
         progress()
+        if (media.id < 0 && savedInstanceState == null) checkExtensionTitleOnAniList(media.id)
 
         model.getMedia().observe(this) {
             if (it != null) {

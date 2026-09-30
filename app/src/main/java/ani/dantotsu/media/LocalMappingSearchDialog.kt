@@ -37,6 +37,8 @@ class LocalMappingSearchDialog : BottomSheetDialogFragment() {
     var searchType: String = "ANIME" // ANIME or MANGA
     var searchFormat: String? = null // NOVEL for local novels
     var onMappingSelected: ((Int) -> Unit)? = null
+    /** False when the caller keeps the mapping itself (titles opened from an extension). */
+    var saveMapping = true
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -59,7 +61,7 @@ class LocalMappingSearchDialog : BottomSheetDialogFragment() {
         binding.searchRecyclerView.visibility = View.GONE
         binding.searchProgress.visibility = View.VISIBLE
 
-        binding.searchSourceTitle.text = "Map to AniList"
+        binding.searchSourceTitle.text = if (saveMapping) "Map to AniList" else "Link to AniList"
         binding.searchBarText.setText(folderName ?: "")
 
         fun search() {
@@ -84,7 +86,7 @@ class LocalMappingSearchDialog : BottomSheetDialogFragment() {
                         LocalMappingResultAdapter(results.results) { selectedMedia ->
                             // Save the mapping
                             val mapKey = folderName ?: return@LocalMappingResultAdapter
-                            PrefManager.setCustomVal("local_mapping_$mapKey", selectedMedia.id)
+                            if (saveMapping) PrefManager.setCustomVal("local_mapping_$mapKey", selectedMedia.id)
                             snackString("Mapped to: ${selectedMedia.userPreferredName}")
                             onMappingSelected?.invoke(selectedMedia.id)
                             dismiss()
