@@ -24,6 +24,7 @@ import ani.dantotsu.connections.anilist.AnilistSearch.SearchType
 import ani.dantotsu.databinding.ItemChipBinding
 import ani.dantotsu.openLinkInBrowser
 import ani.dantotsu.others.imagesearch.ImageSearchActivity
+import ani.dantotsu.media.extension.ExtensionSearchActivity
 import ani.dantotsu.settings.saving.PrefManager
 import ani.dantotsu.settings.saving.PrefName
 import com.google.android.material.checkbox.MaterialCheckBox.STATE_CHECKED
@@ -172,6 +173,17 @@ class SearchAdapter(private val activity: SearchActivity, private val type: Sear
         }
         binding.searchByImage.setOnClickListener {
             activity.startActivity(Intent(activity, ImageSearchActivity::class.java))
+        }
+        // Search an extension directly, for titles AniList does not have.
+        val mediaType = activity.aniMangaResult.type
+        binding.searchExtensions.visibility =
+            if (mediaType == "ANIME" || mediaType == "MANGA") View.VISIBLE else View.GONE
+        binding.searchExtensions.setOnClickListener {
+            activity.startActivity(
+                Intent(activity, ExtensionSearchActivity::class.java)
+                    .putExtra(ExtensionSearchActivity.EXTRA_TYPE, mediaType)
+                    .putExtra(ExtensionSearchActivity.EXTRA_QUERY, binding.searchBarText.text?.toString())
+            )
         }
         binding.clearHistory.setOnClickListener {
             it.startAnimation(fadeOutAnimation())
