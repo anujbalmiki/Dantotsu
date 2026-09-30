@@ -261,6 +261,9 @@
             android:parentActivityName=".MainActivity"
             android:windowSoftInputMode="adjustResize" />
         <activity
+            android:name=".media.extension.AniListSubmitActivity"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
             android:name=".util.ActivityMarkdownCreator"
             android:windowSoftInputMode="adjustResize|stateVisible" />
         <activity android:name=".parsers.ParserTestActivity" />
