@@ -40,7 +40,16 @@ class MangayomiAnimeParser(private val source: MangayomiSource) : AnimeParser() 
 
     override suspend fun search(query: String): List<ShowResponse> {
         val page = decode<MPages>(engine.call("search", args(query, 1, null)))
-        return page.list.map { ShowResponse(it.name, it.link, FileUrl(it.imageUrl)) }
+        return page.list.map { item ->
+            ShowResponse(item.name, item.link, FileUrl(item.imageUrl)).apply {
+                // The extension tester reads sAnime straight off the first result.
+                sAnime = SAnime.create().apply {
+                    url = item.link
+                    title = item.name
+                    thumbnail_url = item.imageUrl
+                }
+            }
+        }
     }
 
     override suspend fun loadEpisodes(
@@ -76,7 +85,18 @@ class MangayomiAnimeParser(private val source: MangayomiSource) : AnimeParser() 
         sEpisode: SEpisode
     ): List<VideoServer> {
         val videos = decode<List<MVideo>>(engine.call("getVideoList", args(episodeLink)))
-        return videos.filter { it.url.isNotBlank() }.map { v ->
+            .filter { it.url.isNotBlank() }
+        if (videos.isEmpty()) {
+            // Extensions swallow their network errors, so say which request went wrong.
+            val trace = engine.lastTrace
+            Logger.log("Mangayomi $name: no videos for $episodeLink\n${trace.joinToString("\n")}")
+            val failed = trace.filterNot { " -> 2" in it }
+            throw MangayomiException(
+                "$name found no videos. " + (failed.lastOrNull()
+                    ?: "Requests: " + trace.joinToString(", ") { it.substringAfter("://").substringBefore("/") + it.substringAfter(" -> ", "").let { r -> " $r" } })
+            )
+        }
+        return videos.map { v ->
             val headers = v.headers.orEmpty()
             val video = Video(
                 url = v.originalUrl ?: v.url,
