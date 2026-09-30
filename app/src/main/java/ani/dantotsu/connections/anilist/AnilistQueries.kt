@@ -25,6 +25,7 @@ import ani.dantotsu.media.Author
 import ani.dantotsu.media.Character
 import ani.dantotsu.media.Media
 import ani.dantotsu.media.Studio
+import ani.dantotsu.media.extension.ExtensionTitles
 import ani.dantotsu.others.MalScraper
 import ani.dantotsu.connections.mal.MAL
 import ani.dantotsu.connections.mapping.IdMapper
@@ -990,6 +991,14 @@ fun userMediaDetails(media: Media): Media {
 
         filterAndMap(currentMedia)
         filterAndMap(repeatingMedia)
+
+        // Titles opened straight from an extension, which AniList does not know about.
+        if (type == "Anime" || type == "Manga") {
+            ExtensionTitles.continuing(type == "Anime").forEach {
+                if (it.id !in removeList) subMap[it.id] =
+                    ExtensionTitles.media(it).apply { cameFromContinue = true }
+            }
+        }
 
         @Suppress("UNCHECKED_CAST")
         val list = PrefManager.getNullableCustomVal(

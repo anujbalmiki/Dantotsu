@@ -37,6 +37,7 @@ fun updateProgress(media: Media, number: String) {
             media.userProgress = progressInt
             ExtensionTitles.setProgress(media.id, progressInt)
             toast(currContext()?.getString(R.string.setting_progress, progressInt))
+            Refresh.all()
         }
         return
     }

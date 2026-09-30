@@ -59,9 +59,12 @@ object ExtensionTitles {
         _all.value = list
     }
 
-    /** Stable per source and link, and below -1 since the details screen uses -1 for "none". */
+    /**
+     * Stable per source and link. At or below -1000: the details screen uses -1 for "none" and
+     * home uses -100 and down for loading placeholders.
+     */
     fun idFor(anime: Boolean, source: String, link: String): Int =
-        -(("$anime|$source|$link".hashCode() and 0x3fffffff) + 2)
+        -(("$anime|$source|$link".hashCode() and 0x3fffffff) + 1000)
 
     fun get(id: Int) = _all.value.find { it.id == id }
 
@@ -69,7 +72,8 @@ object ExtensionTitles {
 
     fun setProgress(id: Int, progress: Int) {
         val t = get(id) ?: return
-        save(_all.value.map { if (it.id == id) t.copy(progress = progress) else it })
+        val updated = t.copy(progress = progress, lastOpened = System.currentTimeMillis())
+        save(listOf(updated) + _all.value.filterNot { it.id == id })
     }
 
     fun sources(anime: Boolean): BaseSources = if (anime) AnimeSources else MangaSources
@@ -79,7 +83,8 @@ object ExtensionTitles {
         sources(anime).names.filterNot { it in setOf("Torrent", "Local", "Downloaded") }
 
     fun open(context: Context, anime: Boolean, source: String, response: ShowResponse) {
-        val id = idFor(anime, source, response.link)
+        val old = _all.value.find { it.anime == anime && it.source == source && it.link == response.link }
+        val id = old?.id ?: idFor(anime, source, response.link)
         val sources = sources(anime)
         val index = sources.names.indexOf(source)
         if (index < 0) {
@@ -88,7 +93,6 @@ object ExtensionTitles {
         }
         // Save what the user picked, so the source loads this exact title instead of searching.
         sources.saveResponse(index, id, response)
-        val old = get(id)
         val title = ExtensionTitle(
             id, anime, source, response.name, response.link,
             response.coverUrl.url.takeIf { it.isNotBlank() } ?: old?.cover,
@@ -101,7 +105,7 @@ object ExtensionTitles {
         selected.sourceIndex = index
         PrefManager.setCustomVal("Selected-$id", selected)
 
-        MediaDetailsActivity.mediaSingleton = toMedia(title).also { it.selected = selected }
+        MediaDetailsActivity.mediaSingleton = media(title).also { it.selected = selected }
         context.startActivity(Intent(context, MediaDetailsActivity::class.java))
     }
 
@@ -161,7 +165,10 @@ object ExtensionTitles {
         return media
     }
 
-    private fun toMedia(t: ExtensionTitle) = Media(
+    /** Titles with progress, for home's Continue Watching / Reading. */
+    fun continuing(anime: Boolean) = _all.value.filter { it.anime == anime && it.progress != null }
+
+    fun media(t: ExtensionTitle) = Media(
         id = t.id,
         name = t.name,
         nameRomaji = t.name,
@@ -173,5 +180,6 @@ object ExtensionTitles {
         anime = if (t.anime) Anime() else null,
         manga = if (t.anime) null else Manga(),
         format = if (t.anime) null else "MANGA",
+        userUpdatedAt = t.lastOpened,
     )
 }

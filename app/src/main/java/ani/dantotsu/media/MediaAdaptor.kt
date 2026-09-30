@@ -1,5 +1,6 @@
 package ani.dantotsu.media
 
+import ani.dantotsu.media.extension.ExtensionTitles
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -104,7 +105,7 @@ class MediaAdaptor(
         setAnimation(activity, b.root)
         val media = mediaList?.getOrNull(position) ?: return
         val density = activity.resources.displayMetrics.density
-        if (media.id < 0) {
+        if (media.isSkeleton) {
             bindCompactSkeleton(b, density)
         } else {
             bindCompactContent(b, media, density)
@@ -571,7 +572,7 @@ class MediaAdaptor(
                 val pos = bindingAdapterPosition
                 if (pos == RecyclerView.NO_POSITION) return@setSafeOnClickListener
                 val media = currentAdapter.mediaList?.getOrNull(pos)
-                if (media == null || media.id < 0) return@setSafeOnClickListener
+                if (media == null || media.isSkeleton) return@setSafeOnClickListener
                 currentAdapter.clicked(
                     pos,
                     binding.itemCompactImage,
@@ -593,7 +594,7 @@ class MediaAdaptor(
                 val pos = bindingAdapterPosition
                 if (pos == RecyclerView.NO_POSITION) return@setSafeOnClickListener
                 val media = currentAdapter.mediaList?.getOrNull(pos)
-                if (media == null || media.id < 0) return@setSafeOnClickListener
+                if (media == null || media.isSkeleton) return@setSafeOnClickListener
                 currentAdapter.clicked(
                     pos,
                     binding.itemCompactImage,
@@ -616,7 +617,7 @@ class MediaAdaptor(
                 val pos = bindingAdapterPosition
                 if (pos == RecyclerView.NO_POSITION) return@setSafeOnClickListener
                 val media = currentAdapter.mediaList?.getOrNull(pos)
-                if (media == null || media.id < 0) return@setSafeOnClickListener
+                if (media == null || media.isSkeleton) return@setSafeOnClickListener
                 currentAdapter.clicked(
                     pos,
                     binding.itemCompactImage,
@@ -640,7 +641,7 @@ class MediaAdaptor(
                 val pos = bindingAdapterPosition
                 if (pos == RecyclerView.NO_POSITION) return@setSafeOnClickListener
                 val media = currentAdapter.mediaList?.getOrNull(pos)
-                if (media == null || media.id < 0) return@setSafeOnClickListener
+                if (media == null || media.isSkeleton) return@setSafeOnClickListener
                 currentAdapter.clicked(
                     pos,
                     binding.itemCompactImage,
@@ -652,7 +653,7 @@ class MediaAdaptor(
                 val pos = bindingAdapterPosition
                 if (pos == RecyclerView.NO_POSITION) return@setSafeOnClickListener
                 val media = currentAdapter.mediaList?.getOrNull(pos)
-                if (media == null || media.id < 0) return@setSafeOnClickListener
+                if (media == null || media.isSkeleton) return@setSafeOnClickListener
                 currentAdapter.clicked(
                     pos,
                     binding.itemCompactImage,
@@ -670,7 +671,12 @@ class MediaAdaptor(
     fun clicked(position: Int, itemCompactImage: ImageView?, bitmap: Bitmap? = null) {
         if ((mediaList?.size ?: 0) > position && position != -1) {
             val media = mediaList?.get(position) ?: return
-            if (media.id < 0) return
+            if (media.isSkeleton) return
+            if (media.id < 0) {
+                // Opened from an extension: reopen through its source, which may have moved.
+                ExtensionTitles.get(media.id)?.let { ExtensionTitles.open(activity, it) }
+                return
+            }
             if (bitmap != null) MediaSingleton.bitmap = bitmap
             ContextCompat.startActivity(
                 activity,
@@ -755,3 +761,6 @@ class MediaAdaptor(
     }
 
 }
+
+/** Home's loading placeholders (see HomeFragment.getSkeletonMediaList). */
+private val Media.isSkeleton get() = id in -199..-100
