@@ -7,6 +7,7 @@ import ani.dantotsu.connections.mal.MAL
 import ani.dantotsu.currContext
 import ani.dantotsu.media.Media
 import ani.dantotsu.media.emptyMedia
+import ani.dantotsu.media.extension.ExtensionTitles
 import ani.dantotsu.settings.saving.PrefManager
 import ani.dantotsu.settings.saving.PrefName
 import ani.dantotsu.toast
@@ -48,6 +49,15 @@ fun updateProgress(media: Media, number: String) {
         ?: number.toFloatOrNull()?.toInt()
         ?: return
 
+    if (!incognito && media.id < 0) {
+        // Opened straight from an extension: not on AniList, so progress stays on the phone.
+        if (progressInt > (media.userProgress ?: -1)) {
+            media.userProgress = progressInt
+            ExtensionTitles.setProgress(media.id, progressInt)
+            toast(currContext()?.getString(R.string.setting_progress, progressInt))
+        }
+        return
+    }
     if (!incognito) {
         if (rescueMode) {
             // In rescue mode: cache the update for later AL sync and mirror to MAL
