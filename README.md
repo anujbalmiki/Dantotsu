@@ -27,6 +27,18 @@
 >
 > **By using Dantotsu, you agree to comply with our [Terms of Service](./privacy_policy.md). Please review the ToS to understand our DMCA-compliant, tracking functionality and our non-involvement with any content or services beyond AniList, MyAnimeList, and Discord.**
 
+## This fork
+Personal fork, rebased onto upstream `dev` every night. Builds are on the [releases page](https://github.com/anujbalmiki/Dantotsu/releases). What it adds:
+
+- **Manga reader that does not run out of memory.** Pages are cached compressed and decoded at screen size, so long sessions no longer crash. New **Continuous Chapters** setting (off by default) keeps one chapter in memory at a time.
+- **Downloads.** Select several chapters or episodes and download or delete them at once, plus a download manager button. Bulk delete no longer crashes, and episode downloads work again (the FFmpegKit crash is fixed).
+- **Mangayomi extensions.** JavaScript anime extensions from Mangayomi repos (HiAnime, AniKoto, Miruro and others) install and play like Aniyomi ones, tagged with their repo. Add the repo under anime extension repos.
+- **Titles AniList does not have.** Search > **Sources** searches every installed extension at once. Open any result to read or watch it; progress is kept on the phone, and it shows up in Continue Reading / Watching.
+- **Getting them onto AniList.** On those titles, **Not on AniList** offers **Submit to AniList** (AniList's form inside the app, with the details one tap to copy) and **Link to AniList** (moves your progress over). Once an approved entry appears on AniList, the app offers to link it.
+- **Fixes.** Extension repo fetch no longer redirects to itself forever.
+
+Details and the sync setup are in [FORK.md](FORK.md).
+
 ## Downloads
 <div align="center">
   <p>
