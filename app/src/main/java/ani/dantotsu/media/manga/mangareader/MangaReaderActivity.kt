@@ -47,6 +47,7 @@ import com.google.android.material.slider.Slider
 import ani.dantotsu.GesturesListener
 import ani.dantotsu.NoPaddingArrayAdapter
 import ani.dantotsu.R
+import ani.dantotsu.Refresh
 import ani.dantotsu.connections.anilist.Anilist
 import ani.dantotsu.connections.crashlytics.CrashlyticsInterface
 import ani.dantotsu.connections.discord.Discord
@@ -353,6 +354,8 @@ class MangaReaderActivity : AppCompatActivity() {
         list.add(media.id)
 
         PrefManager.setCustomVal("continueMangaList", list)
+        // Home's Continue Reading lists titles opened from an extension once they are read.
+        if (media.id < 0) Refresh.activity[1]?.postValue(true)
         if (PrefManager.getVal(PrefName.AutoDetectWebtoon) && media.countryOfOrigin != "JP") applyWebtoon(
             defaultSettings
         )
