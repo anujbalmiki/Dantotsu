@@ -146,7 +146,8 @@ class MediaDetailsViewModel : ViewModel() {
                         fetchedMedia?.selected = m.selected
                         media.postValue(fetchedMedia)
                     }
-                } else if (m.id == 0) {
+                } else if (m.id <= 0) {
+                    // 0: local files; below 0: a title opened straight from an extension
                     m.folderName = m.folderName ?: m.name
                     media.postValue(m)
                 } else if (rescueMode && m.idMAL != null) {
@@ -1484,7 +1485,7 @@ class MediaDetailsViewModel : ViewModel() {
                 "Accept" to "application/json, text/plain, */*"
             )
             suspend fun getBakaId(): Int? {
-                if (media.id != 0) {
+                if (media.id > 0) {
                     val id = runCatching {
                         val res = client.get("$bakaBase/source/anilist/${media.id}", headers = headers)
                         if (!res.isSuccessful) return@runCatching null

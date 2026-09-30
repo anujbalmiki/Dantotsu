@@ -78,7 +78,7 @@ object MangaAnimeUtil {
     suspend fun getSeriesFromMedia(media: Media): List<MangaBakaSeries>? =
         withContext(Dispatchers.IO) {
             val endpoints = buildList {
-                if (media.id != 0) {
+                if (media.id > 0) {
                     add("$MANGABAKA_BASE/source/anilist/${media.id}")
                 }
                 if (media.idMAL != null && media.idMAL != 0) {
