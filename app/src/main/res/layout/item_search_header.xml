@@ -92,6 +92,31 @@
         android:paddingEnd="16dp">
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/searchExtensions"
+            style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_gravity="center"
+            android:layout_marginEnd="8dp"
+            android:fontFamily="@font/poppins_bold"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/sources"
+            android:textColor="?attr/colorPrimary"
+            android:textSize="13sp"
+            android:visibility="gone"
+            app:backgroundTint="@color/nav_bg"
+            app:cornerRadius="18dp"
+            app:icon="@drawable/ic_extension"
+            app:iconPadding="4dp"
+            app:iconSize="20dp"
+            app:iconTint="?attr/colorPrimary"
+            tools:ignore="ContentDescription,TextContrastCheck"
+            tools:visibility="visible" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/searchByImage"
             style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
             android:layout_width="wrap_content"

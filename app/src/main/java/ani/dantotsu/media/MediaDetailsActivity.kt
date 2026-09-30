@@ -260,7 +260,7 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
 
         fun fav(media: Media):  PopImageButton? {
             //Fav Button
-            return if (Anilist.userid != null && !rescueMode) {
+            return if (Anilist.userid != null && !rescueMode && media.id >= 0) {
                 if (media.isFav) binding.mediaFav.setImageDrawable(
                     AppCompatResources.getDrawable(
                         this,
@@ -361,6 +361,11 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
                 binding.mediaAddToList.setText(R.string.add_list)
             }
             total()
+            if (media.id < 0) {
+                binding.mediaAddToList.setText(R.string.not_on_anilist)
+                binding.mediaAddToList.setOnClickListener { snackString(getString(R.string.not_on_anilist_desc)) }
+                return
+            }
             binding.mediaAddToList.setOnClickListener {
                 if (rescueMode) {
                     if (MAL.token != null) {
@@ -459,7 +464,9 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
             )
             anime = false
         }
-        selected = if (PrefManager.getVal<Int>(PrefName.CommentsEnabled) != 1 && media.selected!!.window == 2 || rescueMode && media.selected!!.window == 2) 1 else media.selected!!.window
+        // Comments are keyed by AniList id, so titles opened from an extension have none.
+        val commentsOff = PrefManager.getVal<Int>(PrefName.CommentsEnabled) != 1 || rescueMode || media.id < 0
+        selected = if (commentsOff && media.selected!!.window == 2) 1 else media.selected!!.window
         binding.mediaTitle.translationX = -screenWidth
 
         val infoTab = navBar.createTab(R.drawable.ic_round_info_24, R.string.info, R.id.info)
@@ -474,21 +481,21 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
             navBar.createTab(R.drawable.ic_round_comment_24, R.string.comments, R.id.comment)
         navBar.addTab(infoTab)
         navBar.addTab(watchTab)
-        if (PrefManager.getVal<Int>(PrefName.CommentsEnabled) == 1 && !rescueMode) {
+        if (!commentsOff) {
             navBar.addTab(commentTab)
         }
         if (model.continueMedia == null && media.cameFromContinue) {
             model.continueMedia = PrefManager.getVal(PrefName.ContinueMedia)
             selected = 1
         }
-        if (intent.getStringExtra("FRAGMENT_TO_LOAD") != null && PrefManager.getVal<Int>(PrefName.CommentsEnabled) == 1 && !rescueMode) selected = 2
+        if (intent.getStringExtra("FRAGMENT_TO_LOAD") != null && !commentsOff) selected = 2
         if (viewPager.currentItem != selected) viewPager.post {
             viewPager.setCurrentItem(selected, false)
         }
         binding.commentInputLayout.isVisible = selected == 2
 
         // Ensure that if we are returning from the comments tab, we go back to the media content tab
-        if (selected == 2 && (PrefManager.getVal<Int>(PrefName.CommentsEnabled) != 1 || rescueMode)) {
+        if (selected == 2 && commentsOff) {
             selected = 1
         }
         navBar.selectTabAt(selected)
