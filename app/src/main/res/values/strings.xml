@@ -1101,6 +1101,8 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
     <string name="opened_from_extensions">Opened from extensions (long press to remove)</string>
     <string name="no_extension_titles">Titles you open here show up in this list.\nSearch an extension for anything AniList does not have.</string>
     <string name="no_extension_sources">No extensions installed for this type</string>
+    <string name="all_extensions">All extensions</string>
+    <string name="searching_extensions">Searching extensions: %1$d of %2$d done</string>
     <string name="no_results_in">No results in %1$s</string>
     <string name="source_not_installed">%1$s is not installed</string>
     <string name="not_on_anilist">Not on AniList</string>
