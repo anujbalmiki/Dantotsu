@@ -111,7 +111,8 @@ class MediaDetailsViewModel : ViewModel() {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 if (m.id == 0 && m.format?.startsWith("LOCAL") == true) {
                     loadLocalMedia(m)
-                } else if (m.id == 0) {
+                } else if (m.id <= 0) {
+                    // 0: local files; below 0: a title opened straight from an extension
                     m.folderName = m.folderName ?: m.name
                     media.postValue(m)
                 } else if (rescueMode && m.idMAL != null) {
@@ -1616,7 +1617,7 @@ class MediaDetailsViewModel : ViewModel() {
     }
 
     private suspend fun getBakaId(media: Media, bakaBase: String, headers: Map<String, String>): Int? {
-        if (media.id != 0) {
+        if (media.id > 0) {
             val id = fetchBakaSourceId("$bakaBase/source/anilist/${media.id}", headers)
             if (id != null && id != 0) return id
         }

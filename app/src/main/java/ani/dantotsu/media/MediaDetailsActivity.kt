@@ -272,7 +272,7 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
     }
 
     private fun createFavButton(targetMedia: Media, rescueMode: Boolean): PopImageButton? {
-        return if (Anilist.userid != null && !rescueMode) {
+        return if (Anilist.userid != null && !rescueMode && targetMedia.id >= 0) {
             if (targetMedia.isFav) {
                 binding.mediaFav.setImageDrawable(
                     AppCompatResources.getDrawable(this, R.drawable.ic_round_favorite_24)
@@ -373,10 +373,15 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
             binding.mediaAddToList.setText(R.string.add_list)
         }
         updateMediaTotalText()
+        if (media.id < 0) binding.mediaAddToList.setText(R.string.not_on_anilist)
     }
 
     private fun setupAddToListButton(rescueMode: Boolean) {
         updateMediaProgressUi(rescueMode)
+        if (media.id < 0) {
+            binding.mediaAddToList.setOnClickListener { snackString(getString(R.string.not_on_anilist_desc)) }
+            return
+        }
         binding.mediaAddToList.setOnClickListener {
             if (rescueMode) {
                 if (MAL.token != null) {
@@ -464,7 +469,8 @@ class MediaDetailsActivity : AppCompatActivity(), AppBarLayout.OnOffsetChangedLi
         adult = media.isAdult
         setupViewPagerAdapter(viewPager)
 
-        val commentsEnabled = PrefManager.getVal<Int>(PrefName.CommentsEnabled) == 1 && !rescueMode
+        // Comments are keyed by AniList id, so titles opened from an extension have none.
+        val commentsEnabled = PrefManager.getVal<Int>(PrefName.CommentsEnabled) == 1 && !rescueMode && media.id >= 0
         selected = if (!commentsEnabled && media.selected!!.window == 2) 1 else media.selected!!.window
         binding.mediaTitle.translationX = -screenWidth
 
