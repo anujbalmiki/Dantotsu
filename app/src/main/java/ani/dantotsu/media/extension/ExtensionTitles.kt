@@ -165,8 +165,12 @@ object ExtensionTitles {
         return media
     }
 
-    /** Titles with progress, for home's Continue Watching / Reading. */
-    fun continuing(anime: Boolean) = _all.value.filter { it.anime == anime && it.progress != null }
+    /**
+     * For home's Continue Watching / Reading: titles with progress, or opened in the player or
+     * reader ([opened] is the ids those record), since progress only saves on finishing one.
+     */
+    fun continuing(anime: Boolean, opened: Collection<Int>) =
+        _all.value.filter { it.anime == anime && (it.progress != null || it.id in opened) }
 
     fun media(t: ExtensionTitle) = Media(
         id = t.id,
