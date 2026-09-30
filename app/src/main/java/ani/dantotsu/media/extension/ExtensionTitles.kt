@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import ani.dantotsu.R
+import ani.dantotsu.connections.anilist.Anilist
 import ani.dantotsu.media.Media
 import ani.dantotsu.media.MediaDetailsActivity
 import ani.dantotsu.media.Selected
@@ -116,6 +117,48 @@ object ExtensionTitles {
             "${sources[index]?.saveName}_${title.id}", null, ShowResponse::class.java
         ) ?: ShowResponse(title.name, title.link, title.cover ?: "")
         open(context, title.anime, title.source, response)
+    }
+
+    /** An AniList entry whose title matches exactly, e.g. once a submission is approved. */
+    suspend fun findOnAniList(t: ExtensionTitle): Media? {
+        val results = Anilist.query.searchAniManga(
+            type = if (t.anime) "ANIME" else "MANGA", search = t.name
+        )?.results ?: return null
+        val key = normalize(t.name)
+        return results.firstOrNull { m ->
+            listOfNotNull(m.name, m.nameRomaji, m.userPreferredName).any { normalize(it) == key }
+        }
+    }
+
+    private fun normalize(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+
+    /**
+     * Moves [t] onto AniList entry [anilistId]: the same source keeps loading the same title,
+     * local progress goes to AniList when it is ahead, and the local entry is dropped.
+     */
+    suspend fun link(t: ExtensionTitle, anilistId: Int): Media? {
+        val sources = sources(t.anime)
+        val index = sources.names.indexOf(t.source)
+        val parser = sources.list.getOrNull(index)?.get?.value
+        if (parser != null) {
+            parser.loadSavedShowResponse(t.id)?.let {
+                PrefManager.setCustomVal("${parser.saveName}_$anilistId", it)
+            }
+            val selected = PrefManager.getNullableCustomVal("Selected-$anilistId", null, Selected::class.java)
+                ?: Selected()
+            selected.sourceIndex = index
+            PrefManager.setCustomVal("Selected-$anilistId", selected)
+        }
+        val media = Anilist.query.getMedia(anilistId) ?: return null
+        val progress = t.progress
+        if (progress != null && Anilist.userid != null && progress > (media.userProgress ?: -1)) {
+            val status = if (media.userStatus == "REPEATING") "REPEATING" else "CURRENT"
+            Anilist.mutation.editList(anilistId, progress, status = status)
+            media.userProgress = progress
+            media.userStatus = status
+        }
+        remove(t.id)
+        return media
     }
 
     private fun toMedia(t: ExtensionTitle) = Media(
