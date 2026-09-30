@@ -851,20 +851,20 @@ class AnilistQueries {
                     removedMedia.add(media)
                 }
             }
-
-            // Titles opened straight from an extension, which AniList does not know about.
-            if (type == "Anime" || type == "Manga") {
-                ExtensionTitles.continuing(type == "Anime").forEach {
-                    if (it.id !in removeList) subMap[it.id] =
-                        ExtensionTitles.media(it).apply { cameFromContinue = true }
-                }
-            }
             @Suppress("UNCHECKED_CAST")
             val list = PrefManager.getNullableCustomVal(
                 "continue${type}List",
                 listOf<Int>(),
                 List::class.java
             ) as List<Int>
+
+            // Titles opened straight from an extension, which AniList does not know about.
+            if (type == "Anime" || type == "Manga") {
+                ExtensionTitles.continuing(type == "Anime", list).forEach {
+                    if (it.id !in removeList) subMap[it.id] =
+                        ExtensionTitles.media(it).apply { cameFromContinue = true }
+                }
+            }
             if (list.isNotEmpty()) {
                 list.reversed().forEach { id ->
                     subMap[id]?.let { returnArray.add(it) }
