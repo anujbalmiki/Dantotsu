@@ -67,7 +67,6 @@ merging the two.
 | --- | --- |
 | Selection | Select several chapters or episodes, then download or delete them together. Long-press is selection again; a separate button opens the download manager. |
 | Bulk delete | One pass, only items actually on disk; no crash on the shared downloads list. |
-| FFmpegKit | nextlib (player decoders, ffmpeg 6) and ffmpeg-kit (downloads, ffmpeg 8) shipped `libavutil.so` and friends under the same names, and the ffmpeg 6 copies won, so every episode download crashed. nextlib 0.8.4 is vendored as `app/libs/nextlib-media3ext-0.8.4.jar` with its ffmpeg libs renamed to `libnx*.so` in `jniLibs/<abi>` (SONAME and `DT_NEEDED` patched in place). |
 
 ### Extensions
 
