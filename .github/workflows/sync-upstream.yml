@@ -232,6 +232,7 @@ jobs:
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SHA" \
+            --latest \
             --title "Upstream sync $(date -u +%Y-%m-%d)" \
             --notes-file notes.md \
             "$APKS/app-google-arm64-v8a-alpha.apk" \
