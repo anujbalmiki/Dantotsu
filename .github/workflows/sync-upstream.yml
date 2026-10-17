@@ -124,8 +124,36 @@ jobs:
           exit 1
 
       - name: Push rebased branch
+        id: push
         if: steps.rebase.outputs.result == 'rebased'
-        run: git push --force-with-lease origin "HEAD:$PATCH_BRANCH"
+        run: |
+          set -o pipefail
+          git push --force-with-lease origin "HEAD:$PATCH_BRANCH" 2>&1 | tee push.log
+
+      # GITHUB_TOKEN may not push commits that touch .github/workflows, so an upstream change
+      # to beta.yml rejects the push even though the rebase was clean. Say so instead of
+      # failing silently.
+      - name: Open an issue on push failure
+        if: failure() && steps.push.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UP_SHORT: ${{ steps.rebase.outputs.upstream_short }}
+        run: |
+          {
+            echo "The nightly rebase onto upstream \`dev\` (\`$UP_SHORT\`) was clean, but the push was rejected, so nothing was built. Usually upstream changed a workflow file, which the Actions token may not push."
+            echo
+            echo '```'
+            grep -E 'rejected|error' push.log || true
+            echo '```'
+            echo
+            echo 'Push it with your own credentials:'
+            echo
+            echo '```bash'
+            echo 'git fetch upstream dev && git rebase upstream/dev && git push --force-with-lease'
+            echo '```'
+          } > body.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "Upstream sync push rejected at $UP_SHORT" \
+            --label upstream-conflict --body-file body.md
 
       - name: Setup JDK 21
         if: steps.rebase.outputs.result == 'rebased' || inputs.force_build

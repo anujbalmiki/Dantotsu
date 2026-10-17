@@ -24,6 +24,8 @@ Actions tab. It:
    `sync-<date>-<sha>` with the arm64 and universal APKs.
 5. On conflict: aborts, changes nothing, and files (or comments on) an issue labelled
    `upstream-conflict` listing the conflicting files.
+6. If the push is rejected (upstream changed a file under `.github/workflows`, which the Actions
+   token may not push), files an issue too. Push that sync by hand, as below.
 
 GitHub disables scheduled workflows on a repository with 60 days of no activity. If releases go
 quiet, check the Actions tab.
