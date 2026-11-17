@@ -286,7 +286,12 @@ class MangaPageAdapter : RecyclerView.Adapter<MangaPageAdapter.MangaPageViewHold
         media: MutableList<Media>
     ) = HomePageAdapterHelper.initMediaRow(adaptor, recyclerView, progress, title, more, string, media)
 
-    fun updateAvatar() = HomePageAdapterHelper.updateTrendingAvatar(trendingBinding, ready.value == true)
+    // The refresh observer can fire before the page is bound (first launch, fresh install).
+    fun updateAvatar() {
+        if (this::trendingBinding.isInitialized) {
+            HomePageAdapterHelper.updateTrendingAvatar(trendingBinding, ready.value == true)
+        }
+    }
 
     fun updateNotificationCount() {
         if (this::binding.isInitialized) {
