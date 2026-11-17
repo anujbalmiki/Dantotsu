@@ -30,16 +30,21 @@ data class ImageData(
         page: Page,
         httpSource: HttpSource,
         cache: MangaCache? = null
-    ): Bitmap? {
+    ): Bitmap? = fetchImageBytes(page, httpSource, cache)?.let { decodeSampled(it) }
+
+    /** The page's original compressed bytes, as served (downloads save these untouched). */
+    suspend fun fetchImageBytes(
+        page: Page,
+        httpSource: HttpSource,
+        cache: MangaCache? = null
+    ): ByteArray? {
         return withContext(Dispatchers.IO) {
             try {
                 val originalUrl = page.imageUrl ?: ""
 
                 // Re-binding a page used to re-download it every single time, which is what
                 // kept the OkHttp dispatcher (and the heap) permanently busy while scrolling.
-                cache?.getBytes(originalUrl)?.let { cached ->
-                    decodeSampled(cached)?.let { return@withContext it }
-                }
+                cache?.getBytes(originalUrl)?.let { return@withContext it }
 
                 val dataSaver = createDataSaver()
                 val compressedUrl = dataSaver.compress(originalUrl)
@@ -71,9 +76,10 @@ data class ImageData(
                     }
                 }
 
-                val data = bytes ?: return@withContext null
+                // An error page served with 200 must not be cached or saved as a chapter page.
+                val data = bytes?.takeIf { isImage(it) } ?: return@withContext null
                 cache?.putBytes(originalUrl, data)
-                return@withContext decodeSampled(data)
+                return@withContext data
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -112,6 +118,12 @@ fun calcInSampleSize(width: Int, height: Int): Int {
 fun readerMaxSize(): Pair<Int, Int> {
     val w = (Resources.getSystem().displayMetrics.widthPixels * 2).coerceAtLeast(1080)
     return w to (MAX_BITMAP_PIXELS / w).toInt()
+}
+
+fun isImage(bytes: ByteArray): Boolean {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    return bounds.outWidth > 0 && bounds.outHeight > 0
 }
 
 /** Decode compressed image [bytes] subsampled to screen size, in RGB_565 (half the bytes of ARGB_8888). */

@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.graphics.Bitmap
 import android.os.Build
 import android.os.IBinder
 import android.widget.Toast
@@ -279,7 +278,7 @@ class MangaDownloaderService : Service() {
                     true
                 }
 
-                val deferredMap = mutableMapOf<Int, Deferred<Bitmap?>>()
+                val deferredMap = mutableMapOf<Int, Deferred<Unit>>()
                 builder.setContentText("Downloading ${task.title} - ${task.chapter}")
                 if (notifi) {
                     withContext(Dispatchers.Main) {
@@ -312,26 +311,29 @@ class MangaDownloaderService : Service() {
                     }
 
                     deferredMap[index] = async(Dispatchers.IO) {
-                        var bitmap: Bitmap? = null
+                        // Original bytes, not a decoded bitmap: decoding downscales and re-encoding
+                        // to JPEG loses more, which made downloaded pages blurry.
+                        var bytes: ByteArray? = null
                         var retryCount = 0
 
-                        while (bitmap == null && retryCount < task.retries) {
-                            bitmap = image.fetchAndProcessImage(
+                        while (bytes == null && retryCount < task.retries) {
+                            bytes = image.fetchImageBytes(
                                 image.page,
                                 image.source
                             )
-                            if (bitmap == null) {
+                            if (bytes == null) {
                                 snackString("${task.chapter} - Retrying to download page ${index.ofLength(3)}, attempt ${retryCount + 1}.")
                             }
                             retryCount++
                         }
 
-                        if (bitmap == null) {
+                        if (bytes == null) {
                             outputDir.deleteRecursively(this@MangaDownloaderService, false)
                             throw Exception("${task.chapter} - Unable to download all pages after $retryCount attempts. Try again.")
                         }
 
-                        val writtenBytes = saveToDisk("${index.ofLength(3)}.jpg", outputDir, bitmap)
+                        // Name stays .jpg (the offline parser matches it); decoders sniff the real format.
+                        val writtenBytes = saveToDisk("${index.ofLength(3)}.jpg", outputDir, bytes)
                         downloadedBytes += writtenBytes
                         farthest++
 
@@ -361,7 +363,7 @@ class MangaDownloaderService : Service() {
                                 notificationManager.notify(NOTIFICATION_ID, builder.build())
                             }
                         }
-                        bitmap
+                        Unit
                     }
                 }
 
@@ -401,7 +403,7 @@ class MangaDownloaderService : Service() {
     private fun saveToDisk(
         fileName: String,
         directory: DocumentFile,
-        bitmap: Bitmap
+        bytes: ByteArray
     ): Long {
         try {
             directory.findFile(fileName)?.forceDelete(this)
@@ -410,7 +412,7 @@ class MangaDownloaderService : Service() {
 
             file.openOutputStream(this, false).use { outputStream ->
                 if (outputStream == null) throw Exception("Output stream is null")
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+                outputStream.write(bytes)
             }
             return file.length()
         } catch (e: Exception) {
