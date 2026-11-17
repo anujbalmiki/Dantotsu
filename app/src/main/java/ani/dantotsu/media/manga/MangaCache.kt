@@ -126,6 +126,17 @@ fun isImage(bytes: ByteArray): Boolean {
     return bounds.outWidth > 0 && bounds.outHeight > 0
 }
 
+/** Decode at full resolution, for saving downloads (RGB_565 halves memory, as upstream did). */
+fun decodeFullSize(bytes: ByteArray): Bitmap? {
+    return try {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.RGB_565
+        })
+    } catch (_: OutOfMemoryError) {
+        null
+    }
+}
+
 /** Decode compressed image [bytes] subsampled to screen size, in RGB_565 (half the bytes of ARGB_8888). */
 fun decodeSampled(bytes: ByteArray): Bitmap? {
     return try {

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.IBinder
 import android.widget.Toast
@@ -24,6 +25,7 @@ import ani.dantotsu.download.DownloadsManager.Companion.getSubDirectory
 import ani.dantotsu.media.Media
 import ani.dantotsu.media.MediaType
 import ani.dantotsu.media.manga.ImageData
+import ani.dantotsu.media.manga.decodeFullSize
 import ani.dantotsu.media.manga.MangaReadFragment.Companion.ACTION_DOWNLOAD_FAILED
 import ani.dantotsu.media.manga.MangaReadFragment.Companion.ACTION_DOWNLOAD_FINISHED
 import ani.dantotsu.media.manga.MangaReadFragment.Companion.ACTION_DOWNLOAD_PROGRESS
@@ -311,29 +313,29 @@ class MangaDownloaderService : Service() {
                     }
 
                     deferredMap[index] = async(Dispatchers.IO) {
-                        // Original bytes, not a decoded bitmap: decoding downscales and re-encoding
-                        // to JPEG loses more, which made downloaded pages blurry.
-                        var bytes: ByteArray? = null
+                        // Full resolution: the reader's decodeSampled() shrinks pages to save memory,
+                        // which made downloaded chapters blurry.
+                        var bitmap: Bitmap? = null
                         var retryCount = 0
 
-                        while (bytes == null && retryCount < task.retries) {
-                            bytes = image.fetchImageBytes(
+                        while (bitmap == null && retryCount < task.retries) {
+                            bitmap = image.fetchImageBytes(
                                 image.page,
                                 image.source
-                            )
-                            if (bytes == null) {
+                            )?.let { decodeFullSize(it) }
+                            if (bitmap == null) {
                                 snackString("${task.chapter} - Retrying to download page ${index.ofLength(3)}, attempt ${retryCount + 1}.")
                             }
                             retryCount++
                         }
 
-                        if (bytes == null) {
+                        if (bitmap == null) {
                             outputDir.deleteRecursively(this@MangaDownloaderService, false)
                             throw Exception("${task.chapter} - Unable to download all pages after $retryCount attempts. Try again.")
                         }
 
-                        // Name stays .jpg (the offline parser matches it); decoders sniff the real format.
-                        val writtenBytes = saveToDisk("${index.ofLength(3)}.jpg", outputDir, bytes)
+                        val writtenBytes = saveToDisk("${index.ofLength(3)}.jpg", outputDir, bitmap)
+                        bitmap.recycle()
                         downloadedBytes += writtenBytes
                         farthest++
 
@@ -403,7 +405,7 @@ class MangaDownloaderService : Service() {
     private fun saveToDisk(
         fileName: String,
         directory: DocumentFile,
-        bytes: ByteArray
+        bitmap: Bitmap
     ): Long {
         try {
             directory.findFile(fileName)?.forceDelete(this)
@@ -412,7 +414,7 @@ class MangaDownloaderService : Service() {
 
             file.openOutputStream(this, false).use { outputStream ->
                 if (outputStream == null) throw Exception("Output stream is null")
-                outputStream.write(bytes)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
             }
             return file.length()
         } catch (e: Exception) {
