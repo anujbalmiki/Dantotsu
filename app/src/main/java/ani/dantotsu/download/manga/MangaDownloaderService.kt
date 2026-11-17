@@ -425,40 +425,38 @@ class MangaDownloaderService : Service() {
         }
     }
 
+    // Chapters of one title download in parallel and share media.json; without this lock one
+    // chapter deleted the file another was writing, and the uncaught error crashed the app.
+    private val mediaInfoMutex = Mutex()
+
     @OptIn(DelicateCoroutinesApi::class)
     private fun saveMediaInfo(task: DownloadTask, directory: DocumentFile) {
         launchIO {
-            directory.findFile("media.json")?.forceDelete(this@MangaDownloaderService)
-            val file = directory.createFile("application/json", "media.json")
-                ?: throw Exception("File not created")
-            val gson = GsonBuilder()
-                .registerTypeAdapter(SChapter::class.java, InstanceCreator<SChapter> {
-                    SChapterImpl() // Provide an instance of SChapterImpl
-                })
-                .create()
-            val mediaJson = gson.toJson(task.sourceMedia)
-            val media = gson.fromJson(mediaJson, Media::class.java)
-            if (media != null) {
-                media.cover = media.cover?.let { downloadImage(it, directory, "cover.jpg") }
-                media.banner = media.banner?.let { downloadImage(it, directory, "banner.jpg") }
-
-                val jsonString = gson.toJson(media)
-                withContext(Dispatchers.Main) {
-                    try {
-                        file.openOutputStream(this@MangaDownloaderService, false).use { output ->
-                            if (output == null) throw Exception("Output stream is null")
-                            output.write(jsonString.toByteArray())
-                        }
-                    } catch (e: android.system.ErrnoException) {
-                        e.printStackTrace()
-                        Toast.makeText(
-                            this@MangaDownloaderService,
-                            "Error while saving: ${e.localizedMessage}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
+            try {
+                mediaInfoMutex.withLock { writeMediaInfo(task, directory) }
+            } catch (e: Exception) {
+                Logger.log("Failed to save media info: ${e.message}")
             }
+        }
+    }
+
+    private suspend fun writeMediaInfo(task: DownloadTask, directory: DocumentFile) {
+        directory.findFile("media.json")?.forceDelete(this@MangaDownloaderService)
+        val file = directory.createFile("application/json", "media.json")
+            ?: throw Exception("File not created")
+        val gson = GsonBuilder()
+            .registerTypeAdapter(SChapter::class.java, InstanceCreator<SChapter> {
+                SChapterImpl() // Provide an instance of SChapterImpl
+            })
+            .create()
+        val mediaJson = gson.toJson(task.sourceMedia)
+        val media = gson.fromJson(mediaJson, Media::class.java) ?: return
+        media.cover = media.cover?.let { downloadImage(it, directory, "cover.jpg") }
+        media.banner = media.banner?.let { downloadImage(it, directory, "banner.jpg") }
+        val jsonString = gson.toJson(media)
+        file.openOutputStream(this@MangaDownloaderService, false).use { output ->
+            if (output == null) throw Exception("Output stream is null")
+            output.write(jsonString.toByteArray())
         }
     }
 
