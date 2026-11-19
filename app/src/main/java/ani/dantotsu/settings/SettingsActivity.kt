@@ -224,30 +224,33 @@ class SettingsActivity : AppCompatActivity() {
     private fun checkIfOutdated() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val res = client.get("https://api.github.com/repos/itsmechinmoy/dantotsu-updater/releases/latest")
+                // Fork builds: outdated when the Latest release was built from a different commit
+                // than this one (VERSION_NAME carries the short sha after '+').
+                val res = client.get("https://api.github.com/repos/anujbalmiki/Dantotsu/releases/latest")
                 if (res.code == 200) {
                     val json = Mapper.json.parseToJsonElement(res.text).jsonObject
-                    val tagName = json["tag_name"]?.jsonPrimitive?.contentOrNull
-                    if (tagName != null && isOutdated(tagName, BuildConfig.VERSION_NAME)) {
+                    val target = json["target_commitish"]?.jsonPrimitive?.contentOrNull
+                    val buildSha = BuildConfig.VERSION_NAME.substringAfter('+', "").substringBefore('-')
+                    val shaRegex = Regex("[0-9a-f]{7,40}")
+                    if (target != null && target.matches(shaRegex) && buildSha.matches(shaRegex) &&
+                        !target.startsWith(buildSha)
+                    ) {
                         withContext(Dispatchers.Main) {
                             binding.settingsVersion.text = getString(
                                 R.string.version_current_outdated,
                                 BuildConfig.VERSION_NAME
                             )
                             binding.settingsVersion.setOnClickListener {
-                                openLinkInBrowser("https://github.com/itsmechinmoy/dantotsu-updater/releases/latest")
+                                openLinkInBrowser("https://github.com/anujbalmiki/Dantotsu/releases/latest")
                             }
                         }
                     }
                 }
             } catch (e: Exception) {
-                Logger.log("Failed to check dantotsu-updater releases: ${e.message}")
+                Logger.log("Failed to check fork releases: ${e.message}")
             }
         }
     }
-
-    private fun isOutdated(latestTag: String, currentVersion: String): Boolean =
-        ani.dantotsu.util.VersionUtil.isOutdated(latestTag, currentVersion)
 
     companion object {
         fun getDeviceInfo(): String {
