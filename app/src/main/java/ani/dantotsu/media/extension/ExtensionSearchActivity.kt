@@ -40,6 +40,8 @@ class ExtensionSearchActivity : AppCompatActivity() {
     private var anime = true
     private var source: String? = null
     private var searchJob: Job? = null
+    // Pick mode: id of the title being moved to another source, 0 when browsing normally.
+    private var moveFrom = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +52,7 @@ class ExtensionSearchActivity : AppCompatActivity() {
         binding.extensionSearchRoot.setPadding(0, binding.extensionSearchRoot.paddingTop, 0, navBarHeight)
         binding.extensionSearchTitle.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
+        moveFrom = intent.getIntExtra(EXTRA_MOVE_FROM, 0)
         anime = intent.getStringExtra(EXTRA_TYPE) != "MANGA"
         val spans = clamp(resources.displayMetrics.widthPixels / 124f.px, 1, 6)
         binding.extensionSearchResults.layoutManager = GridLayoutManager(this, spans).apply {
@@ -95,7 +98,7 @@ class ExtensionSearchActivity : AppCompatActivity() {
     private fun showLibrary() {
         searchJob?.cancel()
         binding.extensionSearchProgress.visibility = View.GONE
-        val titles = ExtensionTitles.all.value.filter { it.anime == anime }.sortedByDescending { it.lastOpened }
+        val titles = if (moveFrom != 0) emptyList() else ExtensionTitles.all.value.filter { it.anime == anime }.sortedByDescending { it.lastOpened }
         binding.extensionSearchLabel.setText(R.string.opened_from_extensions)
         binding.extensionSearchLabel.visibility = if (titles.isEmpty()) View.GONE else View.VISIBLE
         showEmpty(if (titles.isEmpty()) getString(R.string.no_extension_titles) else null)
@@ -121,6 +124,7 @@ class ExtensionSearchActivity : AppCompatActivity() {
         val type = anime
         val names = if (chosen == getString(R.string.all_extensions)) ExtensionTitles.sourceNames(type)
         else listOf(chosen)
+        val from = ExtensionTitles.get(moveFrom)
         val adapter = Adapter(mutableListOf())
         binding.extensionSearchResults.adapter = adapter
         var pending = names.size
@@ -144,12 +148,17 @@ class ExtensionSearchActivity : AppCompatActivity() {
                                     .getOrNull()
                             }
                         }
-                    }.orEmpty()
+                    }.orEmpty().filterNot { r -> from != null && name == from.source && r.link == from.link }
                     if (results.isNotEmpty()) {
                         binding.extensionSearchProgress.visibility = View.GONE
                         adapter.add(listOf(Item(name, null, header = true)) + results.map { r ->
                             Item(r.name, r.coverUrl.url, action = {
-                                ExtensionTitles.open(this@ExtensionSearchActivity, type, name, r)
+                                if (moveFrom == 0) ExtensionTitles.open(this@ExtensionSearchActivity, type, name, r)
+                                else if (ExtensionTitles.move(this@ExtensionSearchActivity, moveFrom, name, r)) {
+                                    snackString(getString(R.string.moved_to_source, r.name, name))
+                                    setResult(RESULT_OK)
+                                    finish()
+                                }
                             })
                         })
                     }
@@ -223,6 +232,7 @@ class ExtensionSearchActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_TYPE = "type"
         const val EXTRA_QUERY = "query"
+        const val EXTRA_MOVE_FROM = "moveFrom"
         private const val SEARCH_PARALLELISM = 6
         private const val SEARCH_TIMEOUT_MS = 25_000L
     }

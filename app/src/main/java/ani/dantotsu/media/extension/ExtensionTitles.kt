@@ -83,13 +83,53 @@ object ExtensionTitles {
         sources(anime).names.filterNot { it in setOf("Torrent", "Local", "Downloaded") }
 
     fun open(context: Context, anime: Boolean, source: String, response: ShowResponse) {
+        val (title, selected) = register(context, anime, source, response) ?: return
+        MediaDetailsActivity.mediaSingleton = media(title).also { it.selected = selected }
+        context.startActivity(Intent(context, MediaDetailsActivity::class.java))
+    }
+
+    /**
+     * Moves [oldId] to [response] on [source] (a new id, since the id hashes source and link):
+     * progress and per-title settings carry over, the old entry goes. If the target already
+     * exists, the higher progress wins and its own saved values are kept.
+     */
+    fun move(context: Context, oldId: Int, source: String, response: ShowResponse): Boolean {
+        val old = get(oldId) ?: return false
+        val existing = _all.value.find { it.anime == old.anime && it.source == source && it.link == response.link }
+        if (existing?.id == oldId) return false
+        val (target, _) = register(context, old.anime, source, response) ?: return false
+        val progress = listOfNotNull(old.progress, existing?.progress).maxOrNull()
+        save(listOf(target.copy(progress = progress)) + _all.value.filterNot { it.id == target.id })
+
+        val have = PrefManager.getAllCustomValsForMedia("${target.id}_").keys
+        val moved = PrefManager.getAllCustomValsForMedia("${oldId}_")
+        // The torrent url is source-specific; resume points, reader settings and speed are not.
+        val copy = moved.filterKeys { "${target.id}_${it.removePrefix("${oldId}_")}" !in have && !it.endsWith("_torrent_url") }
+            .mapKeys { "${target.id}_${it.key.removePrefix("${oldId}_")}" }
+        val lang = PrefManager.getNullableCustomVal("subLang_$oldId", null, String::class.java)
+        PrefManager.setCustomVals(copy + if (lang != null) mapOf("subLang_${target.id}" to lang) else emptyMap())
+
+        moved.keys.forEach { PrefManager.removeCustomVal(it) }
+        PrefManager.removeCustomVal("subLang_$oldId")
+        PrefManager.removeCustomVal("Selected-$oldId")
+        val sources = sources(old.anime)
+        // list lookup, not get(): get() falls back to the first source when the old one is gone.
+        sources.list.getOrNull(sources.names.indexOf(old.source))?.get?.value?.let { PrefManager.removeCustomVal("${it.saveName}_$oldId") }
+        remove(oldId)
+        return true
+    }
+
+    /** Saves [response] as a title of [source], keeping any progress already there. Null if [source] is not installed. */
+    private fun register(
+        context: Context, anime: Boolean, source: String, response: ShowResponse,
+    ): Pair<ExtensionTitle, Selected>? {
         val old = _all.value.find { it.anime == anime && it.source == source && it.link == response.link }
         val id = old?.id ?: idFor(anime, source, response.link)
         val sources = sources(anime)
         val index = sources.names.indexOf(source)
         if (index < 0) {
             snackString(context.getString(R.string.source_not_installed, source))
-            return
+            return null
         }
         // Save what the user picked, so the source loads this exact title instead of searching.
         sources.saveResponse(index, id, response)
@@ -104,9 +144,7 @@ object ExtensionTitles {
             ?: Selected()
         selected.sourceIndex = index
         PrefManager.setCustomVal("Selected-$id", selected)
-
-        MediaDetailsActivity.mediaSingleton = media(title).also { it.selected = selected }
-        context.startActivity(Intent(context, MediaDetailsActivity::class.java))
+        return title to selected
     }
 
     /** Reopens a saved title with the search result stored when it was first opened. */

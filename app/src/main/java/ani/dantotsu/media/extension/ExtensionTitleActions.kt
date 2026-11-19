@@ -3,6 +3,7 @@ package ani.dantotsu.media.extension
 import android.content.Intent
 import android.view.View
 import android.widget.PopupMenu
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import ani.dantotsu.R
@@ -19,6 +20,10 @@ import java.io.Serializable
 /** The "Not on AniList" button of a title opened from an extension: submit it, or link it. */
 fun AppCompatActivity.setupExtensionTitle(mediaId: Int, button: View) {
     val t = ExtensionTitles.get(mediaId) ?: return
+    // The old details screen would show a title that no longer exists, so it closes after a move.
+    val picker = activityResultRegistry.register(
+        "moveExtensionTitle$mediaId", ActivityResultContracts.StartActivityForResult()
+    ) { if (it.resultCode == AppCompatActivity.RESULT_OK) finish() }
     button.setOnClickListener { v ->
         PopupMenu(this, v).apply {
             menu.add(R.string.submit_to_anilist).setOnMenuItemClickListener { submitToAniList(t); true }
@@ -26,6 +31,15 @@ fun AppCompatActivity.setupExtensionTitle(mediaId: Int, button: View) {
                 LocalMappingSearchDialog.newInstance(t.name, t.anime) { linkToAniList(t, it) }
                     .apply { saveMapping = false }
                     .show(supportFragmentManager, "linkToAniList")
+                true
+            }
+            menu.add(R.string.move_to_source).setOnMenuItemClickListener {
+                picker.launch(
+                    Intent(this@setupExtensionTitle, ExtensionSearchActivity::class.java)
+                        .putExtra(ExtensionSearchActivity.EXTRA_TYPE, if (t.anime) "ANIME" else "MANGA")
+                        .putExtra(ExtensionSearchActivity.EXTRA_QUERY, t.name)
+                        .putExtra(ExtensionSearchActivity.EXTRA_MOVE_FROM, t.id)
+                )
                 true
             }
             show()

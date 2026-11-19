@@ -1526,4 +1526,7 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
         <item quantity="one">Deleted %1$d download</item>
         <item quantity="other">Deleted %1$d downloads</item>
     </plurals>
+    <!-- ext-migrate -->
+    <string name="move_to_source">Move to another source</string>
+    <string name="moved_to_source">Moved to %2$s: %1$s</string>
 </resources>
