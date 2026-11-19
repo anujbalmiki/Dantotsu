@@ -324,11 +324,13 @@ class AnimeDownloaderService : Service() {
                 val outputDir = getSubDirectory(this@AnimeDownloaderService, MediaType.ANIME, false, task.title, task.episode)
                     ?: throw Exception("Failed to create output directory")
 
+                task.started = task.video.drm?.offline != null
                 if (handleDrmDownload(task, baseOutputDir, outputDir, notifi)) {
                     return@withContext
                 }
 
                 val outputFile = prepareOutputFile(task, outputDir)
+                task.started = true
                 executeFfmpegDownload(task, outputFile, baseOutputDir, notifi)
 
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -592,6 +594,7 @@ class AnimeDownloaderService : Service() {
 
     // failed or cancelled: drop this episode's partial output so it is never imported as complete
     private fun removePartialEpisode(task: AnimeDownloadTask) {
+        if (!task.started) return
         runCatching {
             findSubDirectory(this, MediaType.ANIME, task.title, task.episode)?.deleteRecursively(this, false)
         }
@@ -828,6 +831,9 @@ class AnimeDownloaderService : Service() {
         var sessionId: Long = -1,
         @Volatile var cancelled: Boolean = false
     ) {
+        // set once output is about to be written; guards partial cleanup so an older complete copy survives early failures
+        @Volatile var started: Boolean = false
+
         fun getTaskName(): String {
             return "${title.replace("/", "")}/${episode.replace("/", "")}"
         }

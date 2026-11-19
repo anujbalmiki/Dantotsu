@@ -450,7 +450,7 @@ object PrefManager {
 
     /** Merges into existing values, unlike [importAllPrefs] which clears the location first. */
     fun importPerTitle(prefs: Map<String, *>) = setCustomVals(
-        prefs.filterKeys { perTitleKey.matches(it) }
+        prefs.filterKeys { perTitleKey.matches(it) }.filterValues { it != null } // null would remove a local key
             .mapValues { (_, v) -> if (v is ArrayList<*>) arrayListToSet(v) else v }
     )
 
