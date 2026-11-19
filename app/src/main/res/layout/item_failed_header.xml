@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="20dp"
+    android:layout_marginTop="20dp"
+    android:layout_marginBottom="8dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <TextView
+        android:id="@+id/failedHeaderTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:fontFamily="@font/poppins_bold"
+        android:textColor="?attr/colorError"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/failedHeaderRetryAll"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="?android:attr/selectableItemBackground"
+        android:fontFamily="@font/poppins_bold"
+        android:padding="8dp"
+        android:text="@string/retry_all"
+        android:textColor="?attr/colorPrimary"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/failedHeaderClear"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="?android:attr/selectableItemBackground"
+        android:fontFamily="@font/poppins_bold"
+        android:padding="8dp"
+        android:text="@string/clear_failed"
+        android:textColor="?attr/colorError"
+        android:textSize="13sp" />
+</LinearLayout>

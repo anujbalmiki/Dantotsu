@@ -733,7 +733,10 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
             imageData = images,
             sourceMedia = media,
             retries = 25,
-            simultaneousDownloads = 2
+            simultaneousDownloads = 2,
+            chapterUrl = chapter.sChapter.url,
+            sourceName = parser.name,
+            sourceLang = parser.sourceLanguage,
         )
 
         val isAlreadyQueued = MangaServiceDataSingleton.downloadQueue.any {

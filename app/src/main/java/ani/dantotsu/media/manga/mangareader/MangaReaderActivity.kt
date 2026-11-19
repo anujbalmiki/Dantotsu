@@ -2127,7 +2127,10 @@ class MangaReaderActivity : AppCompatActivity() {
                         imageData = images,
                         sourceMedia = media,
                         retries = 25,
-                        simultaneousDownloads = 2
+                        simultaneousDownloads = 2,
+                        chapterUrl = nextChapter.sChapter.url,
+                        sourceName = parser?.name,
+                        sourceLang = parser?.sourceLanguage ?: 0,
                     )
                     MangaServiceDataSingleton.downloadQueue.offer(downloadTask)
                     val intent = Intent(this@MangaReaderActivity, MangaDownloaderService::class.java)

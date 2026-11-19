@@ -1526,4 +1526,9 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
         <item quantity="one">Deleted %1$d download</item>
         <item quantity="other">Deleted %1$d downloads</item>
     </plurals>
+    <!-- failed-downloads -->
+    <string name="failed_downloads_header">Failed</string>
+    <string name="retry_all">Retry all</string>
+    <string name="clear_failed">Clear</string>
+    <string name="retry_opened_title">Could not retry from here, opened the title instead</string>
 </resources>

@@ -24,6 +24,7 @@ import ani.dantotsu.addons.download.DownloadAddonManager
 import ani.dantotsu.connections.crashlytics.CrashlyticsInterface
 import ani.dantotsu.defaultHeaders
 import ani.dantotsu.download.DownloadedType
+import ani.dantotsu.download.FailedDownloads
 import ani.dantotsu.download.DownloadsManager
 import ani.dantotsu.download.DownloadsManager.Companion.getSubDirectory
 import ani.dantotsu.download.video.DrmDownloader
@@ -534,6 +535,7 @@ class AnimeDownloaderService : Service() {
         Injekt.get<CrashlyticsInterface>().logException(
             Exception("Anime Download failed: ${getTaskName(task.title, task.episode)} url: ${task.video.file.url} title: ${task.title} episode: ${task.episode}")
         )
+        recordFailure(task, "Encoding failed")
         currentTasks.removeAll { it.getTaskName() == task.getTaskName() }
         broadcastDownloadFailed(task.episode, task.sourceMedia?.id)
     }
@@ -551,6 +553,7 @@ class AnimeDownloaderService : Service() {
         Injekt.get<CrashlyticsInterface>().logException(
             Exception("Anime Download failed: ${getTaskName(task.title, task.episode)} url: ${task.video.file.url} title: ${task.title} episode: ${task.episode}")
         )
+        recordFailure(task, "Encoding failed")
         currentTasks.removeAll { it.getTaskName() == task.getTaskName() }
         broadcastDownloadFailed(task.episode, task.sourceMedia?.id)
     }
@@ -565,9 +568,18 @@ class AnimeDownloaderService : Service() {
             e.printStackTrace()
             Injekt.get<CrashlyticsInterface>().logException(e)
             if (!task.cancelled) {
+                recordFailure(task, e.message ?: e.javaClass.simpleName)
                 broadcastDownloadFailed(task.episode, task.sourceMedia?.id)
             }
         }
+    }
+
+    // Anime retry needs a fresh server pick, so only title and episode are kept.
+    private fun recordFailure(task: AnimeDownloadTask, error: String) {
+        val mediaId = task.sourceMedia?.id ?: return
+        FailedDownloads.add(
+            FailedDownloads.Entry(MediaType.ANIME, task.title, task.episode, mediaId, error = error.take(200))
+        )
     }
 
     private fun cleanupTask(task: AnimeDownloadTask) {
@@ -593,6 +605,7 @@ class AnimeDownloaderService : Service() {
         }
         val downloadType = DownloadedType(task.title, task.episode, MediaType.ANIME)
         downloadsManager.addDownload(downloadType)
+        FailedDownloads.remove(MediaType.ANIME, task.title, task.episode)
         val size = downloadsManager.getSize(downloadType)
         currentTasks.removeAll { it.getTaskName() == task.getTaskName() }
         broadcastDownloadFinished(task.episode, task.sourceMedia?.id, size)
