@@ -22,6 +22,7 @@ import ani.dantotsu.connections.crashlytics.CrashlyticsInterface
 import ani.dantotsu.download.DownloadedType
 import ani.dantotsu.download.FailedDownloads
 import ani.dantotsu.download.DownloadsManager
+import ani.dantotsu.download.DownloadsManager.Companion.findSubDirectory
 import ani.dantotsu.download.DownloadsManager.Companion.getSubDirectory
 import ani.dantotsu.media.Media
 import ani.dantotsu.media.MediaType
@@ -106,7 +107,7 @@ class MangaDownloaderService : Service() {
             this,
             cancelReceiver,
             IntentFilter(ACTION_CANCEL_DOWNLOAD),
-            ContextCompat.RECEIVER_EXPORTED
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 
@@ -176,7 +177,7 @@ class MangaDownloaderService : Service() {
                     }
                     continue
                 }
-                val taskKey = "${task.title}_${task.chapter}"
+                val taskKey = downloadKey(task.title, task.chapter)
                 val job = serviceScope.launch {
                     semaphore.withPermit {
                         MangaServiceDataSingleton.currentTasks.add(task)
@@ -225,20 +226,16 @@ class MangaDownloaderService : Service() {
         }
     }
 
-    fun cancelDownload(chapter: String) {
-        val tasks = MangaServiceDataSingleton.downloadQueue.filter { it.chapter == chapter || it.uniqueName == chapter }
+    fun cancelDownload(key: String) {
+        val tasks = MangaServiceDataSingleton.downloadQueue.filter { downloadKey(it.title, it.chapter) == key }
         tasks.forEach { task ->
             broadcastDownloadFailed(task.uniqueName)
             broadcastDownloadFailed(task.chapter)
         }
         serviceScope.launch {
             mutex.withLock {
-                val toCancel = downloadJobs.filter { it.key == chapter || it.key.endsWith("_$chapter") }
-                toCancel.forEach { (k, j) ->
-                    j.cancel()
-                    downloadJobs.remove(k)
-                }
-                MangaServiceDataSingleton.downloadQueue.removeAll { it.chapter == chapter || it.uniqueName == chapter }
+                downloadJobs.remove(key)?.cancel()
+                MangaServiceDataSingleton.downloadQueue.removeAll { downloadKey(it.title, it.chapter) == key }
                 updateNotification()
             }
         }
@@ -275,6 +272,7 @@ class MangaDownloaderService : Service() {
             }
             return
         }
+        var outputStarted = false
         try {
             withContext(Dispatchers.IO) {
                 val notifi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -309,6 +307,7 @@ class MangaDownloaderService : Service() {
                 ) ?: throw Exception("Output directory not found")
 
                 outputDir.deleteRecursively(this@MangaDownloaderService, true)
+                outputStarted = true
 
                 var farthest = 0
                 var downloadedBytes = 0L
@@ -323,6 +322,11 @@ class MangaDownloaderService : Service() {
                         // which made downloaded chapters blurry.
                         var bitmap: Bitmap? = null
                         var retryCount = 0
+
+                        // Wi-Fi can drop mid-chapter; fail instead of continuing on mobile data
+                        if (PrefManager.getVal<Boolean>(PrefName.DownloadWifiOnly) && !ani.dantotsu.isWifiConnected(this@MangaDownloaderService)) {
+                            throw Exception(getString(R.string.download_wifi_only_warning))
+                        }
 
                         while (bitmap == null && retryCount < task.retries) {
                             bitmap = image.fetchImageBytes(
@@ -362,7 +366,7 @@ class MangaDownloaderService : Service() {
                             task.imageData.size
                         )
                         val progressPercent = farthest * 100 / task.imageData.size
-                        MangaServiceDataSingleton.progress["${task.title}_${task.chapter}"] = progressPercent
+                        MangaServiceDataSingleton.progress[downloadKey(task.title, task.chapter)] = progressPercent
                         broadcastDownloadProgress(
                             task.uniqueName,
                             progressPercent,
@@ -419,6 +423,11 @@ class MangaDownloaderService : Service() {
                         error = e.message?.take(200) ?: e.javaClass.simpleName
                     )
                 )
+            }
+            // failed or cancelled: drop this chapter's partial pages so they are never imported as complete
+            if (outputStarted) runCatching {
+                findSubDirectory(this, MediaType.MANGA, task.title, task.chapter)
+                    ?.deleteRecursively(this, false)
             }
             Logger.log("Exception while downloading file: ${e.message}")
             snackString("Exception while downloading file: ${e.message}")
@@ -528,21 +537,21 @@ class MangaDownloaderService : Service() {
         val intent = Intent(ACTION_DOWNLOAD_STARTED).apply {
             putExtra(EXTRA_CHAPTER_NUMBER, chapterNumber)
         }
-        sendBroadcast(intent)
+        sendBroadcast(intent.setPackage(packageName))
     }
 
     private fun broadcastDownloadFinished(chapterNumber: String) {
         val intent = Intent(ACTION_DOWNLOAD_FINISHED).apply {
             putExtra(EXTRA_CHAPTER_NUMBER, chapterNumber)
         }
-        sendBroadcast(intent)
+        sendBroadcast(intent.setPackage(packageName))
     }
 
     private fun broadcastDownloadFailed(chapterNumber: String) {
         val intent = Intent(ACTION_DOWNLOAD_FAILED).apply {
             putExtra(EXTRA_CHAPTER_NUMBER, chapterNumber)
         }
-        sendBroadcast(intent)
+        sendBroadcast(intent.setPackage(packageName))
     }
 
     private fun broadcastDownloadProgress(
@@ -557,16 +566,13 @@ class MangaDownloaderService : Service() {
             putExtra(EXTRA_DOWNLOADED_BYTES, downloadedBytes)
             putExtra(EXTRA_ESTIMATED_TOTAL_BYTES, estimatedTotalBytes)
         }
-        sendBroadcast(intent)
+        sendBroadcast(intent.setPackage(packageName))
     }
 
     private val cancelReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == ACTION_CANCEL_DOWNLOAD) {
-                val chapter = intent.getStringExtra(EXTRA_CHAPTER)
-                chapter?.let {
-                    cancelDownload(it)
-                }
+                intent.getStringExtra(EXTRA_TASK_KEY)?.let { cancelDownload(it) }
             }
         }
     }
@@ -590,9 +596,12 @@ class MangaDownloaderService : Service() {
     }
 
     companion object {
-        private const val NOTIFICATION_ID = 1103
-        const val ACTION_CANCEL_DOWNLOAD = "action_cancel_download"
-        const val EXTRA_CHAPTER = "extra_chapter"
+        private const val NOTIFICATION_ID = 1104
+        const val ACTION_CANCEL_DOWNLOAD = "ani.dantotsu.action_cancel_manga_download"
+        const val EXTRA_TASK_KEY = "extra_task_key"
+
+        // Key of a running or queued task: title + chapter, as downloadJobs is keyed
+        fun downloadKey(title: String, chapter: String) = "${title}_$chapter"
     }
 }
 

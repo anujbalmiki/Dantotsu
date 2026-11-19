@@ -8,6 +8,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
@@ -26,6 +29,7 @@ import ani.dantotsu.defaultHeaders
 import ani.dantotsu.download.DownloadedType
 import ani.dantotsu.download.FailedDownloads
 import ani.dantotsu.download.DownloadsManager
+import ani.dantotsu.download.DownloadsManager.Companion.findSubDirectory
 import ani.dantotsu.download.DownloadsManager.Companion.getSubDirectory
 import ani.dantotsu.download.video.DrmDownloader
 import ani.dantotsu.download.anime.AnimeDownloaderService.AnimeDownloadTask.Companion.getTaskName
@@ -44,6 +48,7 @@ import ani.dantotsu.snackString
 import ani.dantotsu.toast
 import ani.dantotsu.util.Logger
 import ani.dantotsu.util.SizeFormatter
+import com.anggrayudi.storage.file.deleteRecursively
 import com.anggrayudi.storage.file.forceDelete
 import com.anggrayudi.storage.file.openOutputStream
 import com.google.gson.GsonBuilder
@@ -118,8 +123,9 @@ class AnimeDownloaderService : Service() {
             this,
             cancelReceiver,
             IntentFilter(ACTION_CANCEL_DOWNLOAD),
-            ContextCompat.RECEIVER_EXPORTED
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(wifiGuard)
     }
 
     private fun startForegroundNotification() {
@@ -142,6 +148,7 @@ class AnimeDownloaderService : Service() {
         AnimeServiceDataSingleton.isServiceRunning = false
         notificationManager.cancel(NOTIFICATION_ID)
         runCatching { unregisterReceiver(cancelReceiver) }
+        runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(wifiGuard) }
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
@@ -563,6 +570,7 @@ class AnimeDownloaderService : Service() {
             task.cancelled = true
             Logger.log("Download cancelled: ${task.getTaskName()}")
         } else {
+            removePartialEpisode(task)
             Logger.log("Exception while downloading file: ${e.message}")
             snackString("Exception while downloading file: ${e.message}")
             e.printStackTrace()
@@ -582,7 +590,15 @@ class AnimeDownloaderService : Service() {
         )
     }
 
+    // failed or cancelled: drop this episode's partial output so it is never imported as complete
+    private fun removePartialEpisode(task: AnimeDownloadTask) {
+        runCatching {
+            findSubDirectory(this, MediaType.ANIME, task.title, task.episode)?.deleteRecursively(this, false)
+        }
+    }
+
     private fun cleanupTask(task: AnimeDownloadTask) {
+        if (task.cancelled) removePartialEpisode(task)
         if (task.cancelled && task.sessionId != -1L) {
             runCatching { ffExtension?.cancelDownload(task.sessionId) }
         }
@@ -743,7 +759,7 @@ class AnimeDownloaderService : Service() {
             putExtra("mediaId", mediaId)
             putExtra("size", size)
         }
-        sendBroadcast(intent)
+        sendBroadcast(intent.setPackage(packageName))
     }
 
     private fun broadcastDownloadFailed(episodeNumber: String, mediaId: Int?) {
@@ -751,7 +767,7 @@ class AnimeDownloaderService : Service() {
             putExtra(AnimeWatchFragment.EXTRA_EPISODE_NUMBER, episodeNumber)
             putExtra("mediaId", mediaId)
         }
-        sendBroadcast(intent)
+        sendBroadcast(intent.setPackage(packageName))
     }
 
     private fun broadcastDownloadProgress(
@@ -768,7 +784,22 @@ class AnimeDownloaderService : Service() {
             putExtra(AnimeWatchFragment.EXTRA_DOWNLOADED_BYTES, downloadedBytes)
             putExtra(AnimeWatchFragment.EXTRA_ESTIMATED_TOTAL_BYTES, estimatedTotalBytes)
         }
-        sendBroadcast(intent)
+        sendBroadcast(intent.setPackage(packageName))
+    }
+
+    // Wi-Fi-only: cancel running tasks when the default network stops being Wi-Fi/ethernet
+    private val wifiGuard = object : ConnectivityManager.NetworkCallback() {
+        @androidx.annotation.OptIn(UnstableApi::class)
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+            val unmetered = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI_AWARE)
+            if (unmetered || !PrefManager.getVal<Boolean>(PrefName.DownloadWifiOnly)) return
+            val active = currentTasks.toList()
+            if (active.isEmpty()) return
+            active.forEach { cancelDownload(it.getTaskName()) }
+            serviceScope.launch(Dispatchers.Main) { snackString(getString(R.string.download_wifi_only_warning)) }
+        }
     }
 
     private val cancelReceiver = object : BroadcastReceiver() {
@@ -810,7 +841,7 @@ class AnimeDownloaderService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 1103
-        const val ACTION_CANCEL_DOWNLOAD = "action_cancel_download"
+        const val ACTION_CANCEL_DOWNLOAD = "ani.dantotsu.action_cancel_anime_download"
         const val EXTRA_TASK_NAME = "extra_task_name"
     }
 }

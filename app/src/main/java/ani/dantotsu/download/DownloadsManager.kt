@@ -213,30 +213,9 @@ class DownloadsManager(private val context: Context) {
     }
 
     private fun cleanDownload(type: MediaType) {
-        // remove all folders that are not in the downloads list
+        // Folders missing from the index are never deleted: names can differ from index entries
+        // (legacy raw title, SAF " (1)" duplicates) and the files are the user's data.
         val directory = getBaseDirectory(context, type)
-        val downloadsSubLists = when (type) {
-            MediaType.MANGA -> mangaDownloadedTypes
-            MediaType.ANIME -> animeDownloadedTypes
-            else -> novelDownloadedTypes
-        }
-        if (directory?.exists() == true && directory.isDirectory) {
-            val files = directory.listFiles()
-            // An empty index with folders still on disk means the index was lost, not
-            // that every folder is orphaned - deleting here would wipe the library.
-            if (downloadsSubLists.isEmpty() && files.isNotEmpty()) {
-                Logger.log(
-                    "cleanDownload($type): index empty but ${files.size} folder(s) on disk " +
-                        "-- skipping delete, run rebuildIndexFromDisk()"
-                )
-            } else {
-                for (file in files) {
-                    if (!downloadsSubLists.any { it.titleName == file.name }) {
-                        file.delete()
-                    }
-                }
-            }
-        }
         //now remove all downloads that do not have a folder
         downloadsList.removeIf { download ->
             val downloadDir = directory?.findFolder(download.titleName)

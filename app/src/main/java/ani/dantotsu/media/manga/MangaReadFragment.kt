@@ -142,7 +142,7 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
                 requireContext(),
                 downloadStatusReceiver,
                 intentFilter,
-                ContextCompat.RECEIVER_EXPORTED
+                ContextCompat.RECEIVER_NOT_EXPORTED
             )
             isReceiverRegistered = true
         }
@@ -786,9 +786,9 @@ open class MangaReadFragment : Fragment(), ScanlatorSelectionListener {
     fun onMangaChapterStopDownloadClick(i: MangaChapter) {
         val cancelIntent = Intent().apply {
             action = MangaDownloaderService.ACTION_CANCEL_DOWNLOAD
-            putExtra(MangaDownloaderService.EXTRA_CHAPTER, i.number)
+            putExtra(MangaDownloaderService.EXTRA_TASK_KEY, MangaDownloaderService.downloadKey(media.mainName(), i.number))
         }
-        requireContext().sendBroadcast(cancelIntent)
+        requireContext().sendBroadcast(cancelIntent.setPackage(requireContext().packageName))
 
         // Remove the download from the manager and update the UI
         downloadManager.removeDownload(

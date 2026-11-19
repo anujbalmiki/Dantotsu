@@ -419,7 +419,7 @@ class NovelReadFragment : Fragment(),
                 requireContext(),
                 downloadStatusReceiver,
                 filter,
-                ContextCompat.RECEIVER_EXPORTED
+                ContextCompat.RECEIVER_NOT_EXPORTED
             )
             isReceiverRegistered = true
         }
