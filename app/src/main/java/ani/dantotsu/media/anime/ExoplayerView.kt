@@ -83,6 +83,7 @@ import ani.dantotsu.connections.subtitles.WyzieSub
 import ani.dantotsu.connections.subtitles.WyzieSubtitles
 import ani.dantotsu.databinding.ActivityExoplayerBinding
 import ani.dantotsu.dp
+import ani.dantotsu.profile.LocalStats
 import ani.dantotsu.hideSystemBars
 import ani.dantotsu.hideSystemBarsExtendView
 import ani.dantotsu.isOnline
@@ -1589,6 +1590,7 @@ class ExoplayerView : AppCompatActivity(), Player.Listener {
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
+        LocalStats.track(true, media.id, media.mainName(), isPlaying)
         if (!isBuffering) {
             isPlayerPlaying = isPlaying
             playerView.keepScreenOn = isPlaying
@@ -2022,6 +2024,7 @@ class ExoplayerView : AppCompatActivity(), Player.Listener {
             playerManager.exoPlayer?.pause()
         }
         playerView.onPause()
+        LocalStats.pause()
         aniSkipManager.stopTracking()
         progressManager.stopTracking()
     }

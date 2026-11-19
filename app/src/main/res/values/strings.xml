@@ -1526,4 +1526,11 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
         <item quantity="one">Deleted %1$d download</item>
         <item quantity="other">Deleted %1$d downloads</item>
     </plurals>
+    <!-- stats -->
+    <string name="stats_this_device">This device</string>
+    <string name="stats_watching">Watching</string>
+    <string name="stats_reading">Reading</string>
+    <string name="stats_line">%1$s: today %2$s, 7 days %3$s, 30 days %4$s, all time %5$s</string>
+    <string name="stats_top_titles">Top titles</string>
+    <string name="stats_none">Nothing tracked yet</string>
 </resources>
