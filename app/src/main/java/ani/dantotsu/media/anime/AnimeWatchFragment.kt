@@ -139,7 +139,7 @@ class AnimeWatchFragment : Fragment(), AnimeWatchAdapter.ScanlatorSelectionListe
                 requireContext(),
                 downloadStatusReceiver,
                 intentFilter,
-                ContextCompat.RECEIVER_EXPORTED
+                ContextCompat.RECEIVER_NOT_EXPORTED
             )
             isReceiverRegistered = true
         }
@@ -907,7 +907,7 @@ class AnimeWatchFragment : Fragment(), AnimeWatchAdapter.ScanlatorSelectionListe
                 AnimeDownloaderService.AnimeDownloadTask.getTaskName(media.mainName(), i)
             )
         }
-        requireContext().sendBroadcast(cancelIntent)
+        requireContext().sendBroadcast(cancelIntent.setPackage(requireContext().packageName))
 
         // Remove partial files from the manager
         downloadManager.removeDownload(

@@ -488,7 +488,7 @@ class SelectorDialogFragment : BottomSheetDialogFragment() {
                 putExtra(AnimeWatchFragment.EXTRA_EPISODE_NUMBER, currentEp.number)
                 putExtra("mediaId", media?.id)
             }
-            act.sendBroadcast(intent)
+            act.sendBroadcast(intent.setPackage(act.packageName))
         } else if (selectedVideo == null) {
             snackString(R.string.no_video_selected)
         }

@@ -37,6 +37,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SChapterImpl
 import ani.dantotsu.settings.saving.PrefManager
 import ani.dantotsu.settings.saving.PrefName
+import com.anggrayudi.storage.file.deleteRecursively
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -91,7 +92,7 @@ class NovelDownloaderService : Service() {
             setProgress(0, 0, false)
         }
         startForegroundNotification()
-        ContextCompat.registerReceiver(this, cancelReceiver, IntentFilter(ACTION_CANCEL_DOWNLOAD), ContextCompat.RECEIVER_EXPORTED)
+        ContextCompat.registerReceiver(this, cancelReceiver, IntentFilter(ACTION_CANCEL_DOWNLOAD), ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     private fun startForegroundNotification() {
@@ -155,7 +156,7 @@ class NovelDownloaderService : Service() {
                     }
                     continue
                 }
-                val taskKey = "${task.title}_${task.chapter}"
+                val taskKey = downloadKey(task.title, task.chapter)
                 val job = serviceScope.launch {
                     semaphore.withPermit {
                         NovelServiceDataSingleton.currentTasks.add(task)
@@ -202,19 +203,15 @@ class NovelDownloaderService : Service() {
         }
     }
 
-    fun cancelDownload(chapter: String) {
-        val tasks = NovelServiceDataSingleton.downloadQueue.filter { it.chapter == chapter }
+    fun cancelDownload(key: String) {
+        val tasks = NovelServiceDataSingleton.downloadQueue.filter { downloadKey(it.title, it.chapter) == key }
         tasks.forEach { task ->
             broadcastDownloadFailed(task.originalLink)
         }
         serviceScope.launch {
             mutex.withLock {
-                val toCancel = downloadJobs.filter { it.key == chapter || it.key.endsWith("_$chapter") }
-                toCancel.forEach { (k, j) ->
-                    j.cancel()
-                    downloadJobs.remove(k)
-                }
-                NovelServiceDataSingleton.downloadQueue.removeAll { it.chapter == chapter }
+                downloadJobs.remove(key)?.cancel()
+                NovelServiceDataSingleton.downloadQueue.removeAll { downloadKey(it.title, it.chapter) == key }
                 updateNotification()
             }
         }
@@ -274,35 +271,33 @@ class NovelDownloaderService : Service() {
 
     private suspend fun downloadHtmlChapter(task: DownloadTask) {
         val parser = task.lnReaderParser ?: return
+        var outputStarted = false
         try {
-            withContext(Dispatchers.Main) {
+            withContext(Dispatchers.IO) {
                 val notifi = hasNotificationPermission()
                 broadcastDownloadStarted(task.originalLink)
                 if (notifi) {
                     builder.setContentText("Downloading ${task.title} - ${task.chapter}")
-                    notificationManager.notify(NOTIFICATION_ID, builder.build())
+                    withContext(Dispatchers.Main) { notificationManager.notify(NOTIFICATION_ID, builder.build()) }
                 }
-                
-                val html = withContext(Dispatchers.IO) {
-                    parser.loadChapterHtml(task.downloadLink)
-                }
-                
+
+                val html = parser.loadChapterHtml(task.downloadLink)
+
                 val directory = getSubDirectory(
                     this@NovelDownloaderService,
                     MediaType.NOVEL, false,
                     task.title, task.chapter
                 ) ?: throw Exception("Directory not found")
 
+                outputStarted = true
                 directory.findFile("0.epub")?.forceDelete(this@NovelDownloaderService)
                 val file = directory.createFile("application/epub+zip", "0.epub")
                     ?: throw Exception("Could not create 0.epub")
 
-                withContext(Dispatchers.IO) {
-                    this@NovelDownloaderService.contentResolver.openOutputStream(file.uri)?.use { os ->
-                        val epubBytes = HtmlToEpubUtils.createEpub(task.chapter, html)
-                        os.write(epubBytes)
-                    } ?: throw Exception("Could not open OutputStream")
-                }
+                this@NovelDownloaderService.contentResolver.openOutputStream(file.uri)?.use { os ->
+                    val epubBytes = HtmlToEpubUtils.createEpub(task.chapter, html)
+                    os.write(epubBytes)
+                } ?: throw Exception("Could not open OutputStream")
 
                 task.coverUrl?.let {
                     getSubDirectory(this@NovelDownloaderService, MediaType.NOVEL, false, task.title)
@@ -318,12 +313,13 @@ class NovelDownloaderService : Service() {
 
                 builder.setContentText("${task.title} - ${task.chapter} Download complete")
                     .setProgress(0, 0, false)
-                if (notifi) notificationManager.notify(NOTIFICATION_ID, builder.build())
+                if (notifi) withContext(Dispatchers.Main) { notificationManager.notify(NOTIFICATION_ID, builder.build()) }
 
                 broadcastDownloadFinished(task.originalLink)
                 snackString("${task.title} - ${task.chapter} Download finished")
             }
         } catch (e: Exception) {
+            if (outputStarted) removePartialOutput(task)
             Logger.log("HTML chapter download failed: ${e.message}")
             snackString("Download failed: ${e.message}")
             Injekt.get<CrashlyticsInterface>().logException(e)
@@ -332,13 +328,14 @@ class NovelDownloaderService : Service() {
     }
 
     private suspend fun downloadEpub(task: DownloadTask) {
+        var outputStarted = false
         try {
-            withContext(Dispatchers.Main) {
+            withContext(Dispatchers.IO) {
                 val notifi = hasNotificationPermission()
                 broadcastDownloadStarted(task.originalLink)
                 if (notifi) {
                     builder.setContentText("Downloading ${task.title} - ${task.chapter}")
-                    notificationManager.notify(NOTIFICATION_ID, builder.build())
+                    withContext(Dispatchers.Main) { notificationManager.notify(NOTIFICATION_ID, builder.build()) }
                 }
 
                 if (!isEpubFile(task.downloadLink)) {
@@ -370,6 +367,7 @@ class NovelDownloaderService : Service() {
                                 task.title, task.chapter
                             ) ?: throw Exception("Directory not found")
 
+                            outputStarted = true
                             directory.findFile("0.epub")?.forceDelete(this@NovelDownloaderService)
                             val file = directory.createFile("application/epub+zip", "0.epub")
                                 ?: throw Exception("File not created")
@@ -397,7 +395,7 @@ class NovelDownloaderService : Service() {
 
                                     if (downloaded - lastNotif >= 1024 * 1024) {
                                         val progressPercent = (downloaded * 100 / total).toInt()
-                                        NovelServiceDataSingleton.progress["${task.title}_${task.chapter}"] = progressPercent
+                                        NovelServiceDataSingleton.progress[downloadKey(task.title, task.chapter)] = progressPercent
                                         withContext(Dispatchers.Main) {
                                             builder.setProgress(100, progressPercent, false)
                                             if (notifi) notificationManager.notify(NOTIFICATION_ID, builder.build())
@@ -405,8 +403,12 @@ class NovelDownloaderService : Service() {
                                         lastNotif = downloaded
                                     }
                                     if (downloaded - lastBcast >= 1024 * 256) {
+                                        // Wi-Fi can drop mid-file; fail instead of finishing on mobile data
+                                        if (PrefManager.getVal<Boolean>(PrefName.DownloadWifiOnly) && !ani.dantotsu.isWifiConnected(this@NovelDownloaderService)) {
+                                            throw IOException(getString(R.string.download_wifi_only_warning))
+                                        }
                                         val progressPercent = (downloaded * 100 / total).toInt()
-                                        NovelServiceDataSingleton.progress["${task.title}_${task.chapter}"] = progressPercent
+                                        NovelServiceDataSingleton.progress[downloadKey(task.title, task.chapter)] = progressPercent
                                         withContext(Dispatchers.Main) {
                                             broadcastDownloadProgress(task.originalLink, progressPercent)
                                         }
@@ -426,7 +428,7 @@ class NovelDownloaderService : Service() {
 
                 builder.setContentText("${task.title} - ${task.chapter} Download complete")
                     .setProgress(0, 0, false)
-                if (notifi) notificationManager.notify(NOTIFICATION_ID, builder.build())
+                if (notifi) withContext(Dispatchers.Main) { notificationManager.notify(NOTIFICATION_ID, builder.build()) }
 
                 saveMediaInfo(task, baseDirectory)
                 downloadsManager.addDownload(DownloadedType(task.title, task.chapter, MediaType.NOVEL))
@@ -434,10 +436,19 @@ class NovelDownloaderService : Service() {
                 snackString("${task.title} - ${task.chapter} Download finished")
             }
         } catch (e: Exception) {
+            if (outputStarted) removePartialOutput(task)
             Logger.log("Exception while downloading .epub: ${e.message}")
             snackString("Exception while downloading .epub: ${e.message}")
             Injekt.get<CrashlyticsInterface>().logException(e)
             broadcastDownloadFailed(task.originalLink)
+        }
+    }
+
+    // failed or cancelled: drop this chapter's partial file so it is never imported as complete
+    private fun removePartialOutput(task: DownloadTask) {
+        runCatching {
+            DownloadsManager.findSubDirectory(this, MediaType.NOVEL, task.title, task.chapter)
+                ?.deleteRecursively(this, false)
         }
     }
 
@@ -507,16 +518,16 @@ class NovelDownloaderService : Service() {
         }
 
     private fun broadcastDownloadStarted(link: String) =
-        sendBroadcast(Intent(NovelReadFragment.ACTION_DOWNLOAD_STARTED).apply { putExtra(NovelReadFragment.EXTRA_NOVEL_LINK, link) })
+        sendBroadcast(Intent(NovelReadFragment.ACTION_DOWNLOAD_STARTED).setPackage(packageName).apply { putExtra(NovelReadFragment.EXTRA_NOVEL_LINK, link) })
 
     private fun broadcastDownloadFinished(link: String) =
-        sendBroadcast(Intent(NovelReadFragment.ACTION_DOWNLOAD_FINISHED).apply { putExtra(NovelReadFragment.EXTRA_NOVEL_LINK, link) })
+        sendBroadcast(Intent(NovelReadFragment.ACTION_DOWNLOAD_FINISHED).setPackage(packageName).apply { putExtra(NovelReadFragment.EXTRA_NOVEL_LINK, link) })
 
     private fun broadcastDownloadFailed(link: String) =
-        sendBroadcast(Intent(NovelReadFragment.ACTION_DOWNLOAD_FAILED).apply { putExtra(NovelReadFragment.EXTRA_NOVEL_LINK, link) })
+        sendBroadcast(Intent(NovelReadFragment.ACTION_DOWNLOAD_FAILED).setPackage(packageName).apply { putExtra(NovelReadFragment.EXTRA_NOVEL_LINK, link) })
 
     private fun broadcastDownloadProgress(link: String, progress: Int) =
-        sendBroadcast(Intent(NovelReadFragment.ACTION_DOWNLOAD_PROGRESS).apply {
+        sendBroadcast(Intent(NovelReadFragment.ACTION_DOWNLOAD_PROGRESS).setPackage(packageName).apply {
             putExtra(NovelReadFragment.EXTRA_NOVEL_LINK, link)
             putExtra("progress", progress)
         })
@@ -524,7 +535,7 @@ class NovelDownloaderService : Service() {
     private val cancelReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == ACTION_CANCEL_DOWNLOAD)
-                intent.getStringExtra(EXTRA_CHAPTER)?.let { cancelDownload(it) }
+                intent.getStringExtra(EXTRA_TASK_KEY)?.let { cancelDownload(it) }
         }
     }
 
@@ -540,9 +551,12 @@ class NovelDownloaderService : Service() {
     )
 
     companion object {
-        private const val NOTIFICATION_ID = 1103
-        const val ACTION_CANCEL_DOWNLOAD = "action_cancel_download"
-        const val EXTRA_CHAPTER = "extra_chapter"
+        private const val NOTIFICATION_ID = 1105
+        const val ACTION_CANCEL_DOWNLOAD = "ani.dantotsu.action_cancel_novel_download"
+        const val EXTRA_TASK_KEY = "extra_task_key"
+
+        // Key of a running or queued task: title + chapter, as downloadJobs is keyed
+        fun downloadKey(title: String, chapter: String) = "${title}_$chapter"
     }
 }
 

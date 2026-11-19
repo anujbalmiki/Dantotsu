@@ -340,19 +340,19 @@ class DownloadQueueActivity : AppCompatActivity() {
                 val intent = Intent(AnimeDownloaderService.ACTION_CANCEL_DOWNLOAD).apply {
                     putExtra(AnimeDownloaderService.EXTRA_TASK_NAME, item.uniqueId)
                 }
-                sendBroadcast(intent)
+                sendBroadcast(intent.setPackage(packageName))
             }
             is QueueItem.Manga -> {
                 val intent = Intent(MangaDownloaderService.ACTION_CANCEL_DOWNLOAD).apply {
-                    putExtra(MangaDownloaderService.EXTRA_CHAPTER, item.uniqueId)
+                    putExtra(MangaDownloaderService.EXTRA_TASK_KEY, item.uniqueId)
                 }
-                sendBroadcast(intent)
+                sendBroadcast(intent.setPackage(packageName))
             }
             is QueueItem.Novel -> {
                 val intent = Intent(NovelDownloaderService.ACTION_CANCEL_DOWNLOAD).apply {
-                    putExtra(NovelDownloaderService.EXTRA_CHAPTER, item.uniqueId)
+                    putExtra(NovelDownloaderService.EXTRA_TASK_KEY, item.uniqueId)
                 }
-                sendBroadcast(intent)
+                sendBroadcast(intent.setPackage(packageName))
             }
         }
         startUpdating()
@@ -386,23 +386,23 @@ class DownloadQueueActivity : AppCompatActivity() {
             val intent = Intent(AnimeDownloaderService.ACTION_CANCEL_DOWNLOAD).apply {
                 putExtra(AnimeDownloaderService.EXTRA_TASK_NAME, task.getTaskName())
             }
-            sendBroadcast(intent)
+            sendBroadcast(intent.setPackage(packageName))
         }
 
         val mangaActive = MangaServiceDataSingleton.currentTasks.toList()
         for (task in mangaActive) {
             val intent = Intent(MangaDownloaderService.ACTION_CANCEL_DOWNLOAD).apply {
-                putExtra(MangaDownloaderService.EXTRA_CHAPTER, task.chapter)
+                putExtra(MangaDownloaderService.EXTRA_TASK_KEY, MangaDownloaderService.downloadKey(task.title, task.chapter))
             }
-            sendBroadcast(intent)
+            sendBroadcast(intent.setPackage(packageName))
         }
 
         val novelActive = NovelServiceDataSingleton.currentTasks.toList()
         for (task in novelActive) {
             val intent = Intent(NovelDownloaderService.ACTION_CANCEL_DOWNLOAD).apply {
-                putExtra(NovelDownloaderService.EXTRA_CHAPTER, task.chapter)
+                putExtra(NovelDownloaderService.EXTRA_TASK_KEY, NovelDownloaderService.downloadKey(task.title, task.chapter))
             }
-            sendBroadcast(intent)
+            sendBroadcast(intent.setPackage(packageName))
         }
 
         startUpdating()
@@ -429,7 +429,7 @@ sealed class QueueItem {
         override val title: String get() = task.title
         override val subTitle: String get() = task.chapter
         override val type: String get() = "Manga"
-        override val uniqueId: String get() = task.chapter
+        override val uniqueId: String get() = MangaDownloaderService.downloadKey(task.title, task.chapter)
         override val mediaType: MediaType get() = MediaType.MANGA
     }
 
@@ -437,7 +437,7 @@ sealed class QueueItem {
         override val title: String get() = task.title
         override val subTitle: String get() = task.chapter
         override val type: String get() = "Novel"
-        override val uniqueId: String get() = task.chapter
+        override val uniqueId: String get() = NovelDownloaderService.downloadKey(task.title, task.chapter)
         override val mediaType: MediaType get() = MediaType.NOVEL
     }
 }
