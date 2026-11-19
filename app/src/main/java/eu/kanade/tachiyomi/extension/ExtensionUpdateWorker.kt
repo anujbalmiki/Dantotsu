@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.extension
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -32,7 +34,8 @@ class ExtensionUpdateWorker(appContext: Context, params: WorkerParameters) :
             val novel = Injekt.get<NovelExtensionManager>()
             anime.awaitInitialized()
             manga.awaitInitialized()
-            novel.awaitInitialized()
+            // NovelExtensionManager has no suspend wait, only a flag.
+            withTimeoutOrNull(30_000) { while (!novel.isInitialized) delay(250) }
             anime.findAvailableExtensions() // also refreshes the JS (Mangayomi) sources
             manga.findAvailableExtensions()
             novel.findAvailableExtensions()
