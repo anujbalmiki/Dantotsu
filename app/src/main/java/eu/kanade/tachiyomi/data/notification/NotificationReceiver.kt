@@ -4,7 +4,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import ani.dantotsu.MainActivity
 import eu.kanade.tachiyomi.core.Constants
 
 /**
@@ -25,7 +24,8 @@ class NotificationReceiver {
          * @return [PendingIntent]
          */
         internal fun openExtensionsPendingActivity(context: Context): PendingIntent {
-            val intent = Intent(context, MainActivity::class.java).apply {
+            // MainActivity ignores SHORTCUT_EXTENSIONS, so open the extensions screen directly.
+            val intent = Intent(context, ani.dantotsu.settings.ExtensionsActivity::class.java).apply {
                 action = Constants.SHORTCUT_EXTENSIONS
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }

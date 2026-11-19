@@ -126,9 +126,25 @@ class InstalledAnimeExtensionsFragment : BaseInstalledExtensionsFragment(), Sear
             ) { apk, js -> apk + js.map(::asInstalled) }.collect { extensions ->
                 allInstalled = extensions
                 extensionsAdapter.updateData(sortToAnimeSourcesList(extensions))
+                _binding?.updateAllButton?.isVisible = extensions.any { it.hasUpdate }
             }
         }
+        binding.updateAllButton.setOnClickListener { updateAll() }
         return binding.root
+    }
+
+    private fun updateAll() {
+        val (js, apk) = allInstalled.filter { it.hasUpdate }
+            .partition { it.pkgName.startsWith(MangayomiSource.PKG_PREFIX) }
+        if (js.isNotEmpty()) lifecycleScope.launch {
+            js.forEach { pkg ->
+                MangayomiExtensions.available.value.find { it.pkgName == pkg.pkgName }
+                    ?.let { MangayomiExtensions.install(it) }
+            }
+        }
+        if (apk.isNotEmpty()) {
+            subscribeExtensionUpdates(requireContext(), apk.map { { animeExtensionManager.updateExtension(it) } })
+        }
     }
 
 

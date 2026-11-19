@@ -159,12 +159,33 @@ class InstalledNovelExtensionsFragment : BaseInstalledExtensionsFragment(), Sear
         lifecycleScope.launch {
             novelExtensionManager.allInstalledExtensionsFlow.collect { extensions ->
                 extensionsAdapter.updateData(sortToNovelSourcesList(extensions))
+                _binding?.updateAllButton?.isVisible = extensions.any(::hasUpdate)
             }
         }
+        binding.updateAllButton.setOnClickListener { updateAll() }
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             novelExtensionManager.findAvailableExtensions()
         }
         return binding.root
+    }
+
+    private fun hasUpdate(ext: NovelExtension) = (ext as? NovelExtension.Installed)?.hasUpdate == true ||
+        (ext as? NovelExtension.JsPlugin)?.hasUpdate == true
+
+    private fun updateAll() {
+        lifecycleScope.launch {
+            val (apk, js) = novelExtensionManager.allInstalledExtensionsFlow.first()
+                .filter(::hasUpdate).partition { it is NovelExtension.Installed }
+            js.forEach { novelExtensionManager.updateLnReaderPlugin(it.pkgName) }
+            if (apk.isNotEmpty()) {
+                subscribeExtensionUpdates(
+                    requireContext(),
+                    apk.filterIsInstance<NovelExtension.Installed>()
+                        .map { { novelExtensionManager.updateExtension(it) } },
+                    R.drawable.ic_check
+                )
+            }
+        }
     }
 
     private fun sortToNovelSourcesList(inpt: List<NovelExtension>): List<NovelExtension> {

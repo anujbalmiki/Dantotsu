@@ -235,6 +235,14 @@ class App : Application(), GraphProvider<AppGraph> {
             } catch (e: Exception) {
                 Logger.log("Failed to schedule auto backup: ${e.message}")
             }
+            try {
+                eu.kanade.tachiyomi.extension.ExtensionUpdateWorker.schedule(
+                    this@App,
+                    PrefManager.getVal(PrefName.ExtensionUpdateCheck)
+                )
+            } catch (e: Exception) {
+                Logger.log("Failed to schedule extension update check: ${e.message}")
+            }
         }
         applicationScope.launch(Dispatchers.IO) {
             delay(10000)
