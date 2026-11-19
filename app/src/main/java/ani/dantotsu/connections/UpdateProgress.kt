@@ -47,17 +47,7 @@ fun updateProgress(media: Media, number: String) {
             val a = progressInt
             if (a > (media.userProgress ?: -1)) {
                 val status = if (media.userStatus == "REPEATING") media.userStatus!! else "CURRENT"
-                val pending = PendingProgressUpdate(
-                    mediaId = media.id,
-                    idMAL = media.idMAL,
-                    isAnime = media.anime != null,
-                    progress = a,
-                    status = status,
-                )
-                val existing: List<PendingProgressUpdate> =
-                    PrefManager.getVal(PrefName.PendingProgressUpdates, listOf())
-                val updated = existing.filterNot { it.mediaId == media.id } + pending
-                PrefManager.setVal(PrefName.PendingProgressUpdates, updated)
+                queueProgressUpdate(media, a, status)
                 CoroutineScope(Dispatchers.IO).launch {
                     MAL.query.editList(
                         media.idMAL,
@@ -75,11 +65,14 @@ fun updateProgress(media: Media, number: String) {
             CoroutineScope(Dispatchers.IO).launch {
                 val a = progressInt
                 if (a > (media.userProgress ?: -1)) {
-                    Anilist.mutation.editList(
-                        media.id,
-                        a,
-                        status = if (media.userStatus == "REPEATING") media.userStatus else "CURRENT"
-                    )
+                    val status = if (media.userStatus == "REPEATING") media.userStatus!! else "CURRENT"
+                    if (Anilist.mutation.editList(media.id, a, status = status)) {
+                        // Drop any older queued entry for this media so sync can't move progress backwards.
+                        removeQueuedProgress(media.id)
+                        syncPendingProgressUpdates()
+                    } else {
+                        queueProgressUpdate(media, a, status)
+                    }
                     MAL.query.editList(
                         media.idMAL,
                         media.anime != null,
@@ -101,6 +94,27 @@ fun updateProgress(media: Media, number: String) {
     }
 }
 
+private fun queueProgressUpdate(media: Media, progress: Int, status: String) {
+    val pending = PendingProgressUpdate(
+        mediaId = media.id,
+        idMAL = media.idMAL,
+        isAnime = media.anime != null,
+        progress = progress,
+        status = status,
+    )
+    val existing: List<PendingProgressUpdate> =
+        PrefManager.getVal(PrefName.PendingProgressUpdates, listOf())
+    PrefManager.setVal(PrefName.PendingProgressUpdates, existing.filterNot { it.mediaId == media.id } + pending)
+}
+
+private fun removeQueuedProgress(mediaId: Int) {
+    val existing: List<PendingProgressUpdate> =
+        PrefManager.getVal(PrefName.PendingProgressUpdates, listOf())
+    if (existing.any { it.mediaId == mediaId }) {
+        PrefManager.setVal(PrefName.PendingProgressUpdates, existing.filterNot { it.mediaId == mediaId })
+    }
+}
+
 /** Sync all pending progress updates (cached during rescue mode) to AniList. */
 fun syncPendingProgressUpdates() {
 
@@ -113,6 +127,7 @@ fun syncPendingProgressUpdates() {
         return
     }
     if (pending.isEmpty()) return
+    if (currContext()?.let { ani.dantotsu.isOnline(it) } == false) return // stay queued, no toast spam offline
     toast(currContext()?.getString(R.string.syncing_progress, pending.size))
     CoroutineScope(Dispatchers.IO).launch {
         val remaining = pending.toMutableList()
@@ -248,7 +263,12 @@ private suspend fun syncSingleProgressUpdate(update: PendingProgressUpdate): Boo
             } else {
                 update.mediaId
             }
-            Anilist.mutation.editList(
+            // Never move remote progress backwards (e.g. read further on another device meanwhile).
+            val remote = Anilist.executeQuery<ani.dantotsu.connections.anilist.api.Query.Media>(
+                """{Media(id:$anilistId){id mediaListEntry{progress}}}""", force = true
+            )?.data?.media ?: return false // fetch failed: keep queued
+            if ((remote.mediaListEntry?.progress ?: -1) >= update.progress) return !Anilist.anilistDisabledSignal
+            val ok = Anilist.mutation.editList(
                 mediaID = anilistId,
                 progress = update.progress,
                 score = update.score,
@@ -260,7 +280,7 @@ private suspend fun syncSingleProgressUpdate(update: PendingProgressUpdate): Boo
                 completedAt = update.endDate,
                 customList = update.customLists,
             )
-            !Anilist.anilistDisabledSignal
+            ok && !Anilist.anilistDisabledSignal
         } catch (_: Exception) {
             false
         }

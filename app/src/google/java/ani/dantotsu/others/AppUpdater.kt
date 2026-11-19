@@ -146,24 +146,9 @@ object AppUpdater {
     }
 
     suspend fun check(activity: FragmentActivity, post: Boolean = false) {
-        if (post) snackString(currContext()?.getString(R.string.checking_for_update))
-        val repo = activity.getString(R.string.repo)
-        tryWithSuspend {
-            val (md, version, isCustom) = fetchUpdateInfo(repo) ?: return@tryWithSuspend
-            Logger.log("Git Version : $version")
-            val dontShow = PrefManager.getCustomVal("dont_ask_for_update_$version", false)
-            val shouldUpdate = if (isCustom) {
-                isOutdated(version, BuildConfig.VERSION_NAME)
-            } else {
-                version > BuildConfig.VERSION_NAME
-            }
-
-            if (shouldUpdate && !dontShow && !activity.isDestroyed) {
-                showUpdateDialog(activity, version, md, isCustom, repo)
-            } else {
-                if (post) snackString(currContext()?.getString(R.string.no_update_found))
-            }
-        }
+        // Fork builds are signed with a different key than upstream, so upstream APKs can't install over them.
+        if (!post) return
+        openLinkInBrowser("https://github.com/anujbalmiki/Dantotsu/releases")
     }
 
     private fun isOutdated(latestTag: String, currentVersion: String): Boolean =

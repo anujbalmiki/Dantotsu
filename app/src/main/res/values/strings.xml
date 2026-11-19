@@ -1442,6 +1442,8 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
     <string name="smart_download_anime_desc">Automatically download the next episode while watching a downloaded one</string>
     <string name="smart_download_manga">Smart Download (Next Chapter)</string>
     <string name="smart_download_manga_desc">Automatically download the next chapter while reading a downloaded one</string>
+    <string name="smart_download_ahead">Download ahead</string>
+    <string name="smart_download_ahead_desc">How many chapters or episodes to download after the current one (1-5)</string>
 
     <!-- Spoiler Tags -->
     <string name="hide_spoiler_tags">Hide Spoiler Tags</string>

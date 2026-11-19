@@ -2144,20 +2144,19 @@ class MangaReaderActivity : AppCompatActivity() {
 
     private fun checkSmartDownloadManga(currentChapter: MangaChapter) {
         if (!PrefManager.getVal<Boolean>(PrefName.SmartDownloadManga)) return
+        if (currentChapterIndex < 0) return // chapter not in list: drop(0) would queue from chapter 1
+        // The service enforces Wi-Fi only per task and snackbars each; skip quietly here.
+        if (PrefManager.getVal<Boolean>(PrefName.DownloadWifiOnly) && !ani.dantotsu.isWifiConnected(this)) return
         val downloadsManager = Injekt.get<DownloadsManager>()
-        val isCurrentDownloaded = downloadsManager.queryDownload(media.mainName(), currentChapter.number, MediaType.MANGA) ||
-                model.mangaReadSources?.isDownloadedSource(media.selected?.sourceIndex ?: -1) == true
-        if (!isCurrentDownloaded) return
+        val ahead = PrefManager.getVal<Int>(PrefName.SmartDownloadAhead).coerceIn(1, 5)
 
-        val nextIndex = currentChapterIndex + 1
-        if (nextIndex !in chaptersArr.indices) return
-        val nextChapterKey = chaptersArr[nextIndex]
-        val nextChapter = chapters[nextChapterKey] ?: media.manga?.chapters?.get(nextChapterKey) ?: return
-
-        if (downloadsManager.queryDownload(media.mainName(), nextChapter.number, MediaType.MANGA)) return
-        if (isChapterAlreadyQueued(nextChapter)) return
-
-        enqueueSmartDownload(nextChapter)
+        // Same chapter order as the reader's next-chapter navigation (chaptersArr).
+        for (nextKey in chaptersArr.drop(currentChapterIndex + 1).take(ahead)) {
+            val nextChapter = chapters[nextKey] ?: media.manga?.chapters?.get(nextKey) ?: continue
+            if (downloadsManager.queryDownload(media.mainName(), nextChapter.number, MediaType.MANGA)) continue
+            if (isChapterAlreadyQueued(nextChapter)) continue
+            enqueueSmartDownload(nextChapter)
+        }
     }
 
     private fun Slider.updateRangeAndValue(to: Float, currentVal: Float, from: Float = 1f) {

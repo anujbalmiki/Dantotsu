@@ -123,6 +123,24 @@ class SettingsMangaActivity : AppCompatActivity() {
                         }
                     ),
                     Settings(
+                        type = 1,
+                        name = getString(R.string.smart_download_ahead),
+                        desc = getString(R.string.smart_download_ahead_desc),
+                        icon = R.drawable.ic_download_24,
+                        onClick = {
+                            context.customAlertDialog().apply {
+                                setTitle(R.string.smart_download_ahead)
+                                singleChoiceItems(
+                                    arrayOf("1", "2", "3", "4", "5"),
+                                    PrefManager.getVal<Int>(PrefName.SmartDownloadAhead).coerceIn(1, 5) - 1
+                                ) { which ->
+                                    PrefManager.setVal(PrefName.SmartDownloadAhead, which + 1)
+                                }
+                                show()
+                            }
+                        }
+                    ),
+                    Settings(
                         type = 2,
                         name = getString(R.string.include_list),
                         desc = getString(R.string.include_list_desc),

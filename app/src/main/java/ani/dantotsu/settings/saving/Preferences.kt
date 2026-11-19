@@ -76,6 +76,7 @@ enum class PrefName(val data: Pref) {
     ),
     SmartDownloadAnime(Pref(Location.General, Boolean::class, false)),
     SmartDownloadManga(Pref(Location.General, Boolean::class, false)),
+    SmartDownloadAhead(Pref(Location.General, Int::class, 1)),
     AutoBackupInterval(Pref(Location.General, Int::class, 0)),
     AutoBackupMaxCopies(Pref(Location.General, Int::class, 3)),
     LastAutoBackupTimestamp(Pref(Location.General, Long::class, 0L)),

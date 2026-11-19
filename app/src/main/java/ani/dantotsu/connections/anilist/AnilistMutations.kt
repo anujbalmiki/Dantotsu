@@ -194,7 +194,7 @@ class AnilistMutations {
         completedAt: FuzzyDate? = null,
         customList: List<String>? = null,
         advancedScores: List<Double>? = null
-    ) {
+    ): Boolean {
         val headerParams = mutableListOf(
             "${"$"}mediaID: Int",
             "${"$"}progress: Int",
@@ -260,9 +260,10 @@ class AnilistMutations {
         val variables = buildMutationVariables(mediaID, private, priority, hiddenFromStatusLists, progress, progressVolumes, score, repeat, notes, status, customList, advancedScores)
 
                 println(variables)
-        executeQuery<JsonObject>(query, variables, show = true)
+        val result = executeQuery<JsonObject>(query, variables, show = true)
         Anilist.query.invalidateUserStatusCache()
         Anilist.query.invalidateHomePageCache()
+        return result != null // null means network/AniList failure
     }
 
     suspend fun deleteList(listId: Int) {

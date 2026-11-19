@@ -1258,18 +1258,16 @@ class ExoplayerView : AppCompatActivity(), Player.Listener {
         return videos.maxByOrNull { it.quality ?: 0 } ?: videos.first()
     }
 
-    private fun getNextEpisodeKeyForSmartDownload(currentExt: ani.dantotsu.parsers.VideoExtractor): String? {
-        if (!PrefManager.getVal<Boolean>(PrefName.SmartDownloadAnime)) return null
-        val isOffline = currentExt.server.offline || Injekt.get<DownloadsManager>().queryDownload(media.mainName(), episode.number, MediaType.ANIME)
-        if (!isOffline) return null
-
+    private fun getNextEpisodeKeysForSmartDownload(): List<String> {
+        if (!PrefManager.getVal<Boolean>(PrefName.SmartDownloadAnime)) return emptyList()
         val currentIdx = episodeArr.indexOf(episode.number)
-        if (currentIdx == -1 || currentIdx + 1 >= episodeArr.size) return null
-        val nextEpKey = episodeArr[currentIdx + 1]
+        if (currentIdx == -1) return emptyList()
         val downloadsManager = Injekt.get<DownloadsManager>()
-        if (downloadsManager.queryDownload(media.mainName(), nextEpKey, MediaType.ANIME)) return null
-        if (AnimeDownloader.isDownloading(media.id, nextEpKey)) return null
-        return nextEpKey
+        val ahead = PrefManager.getVal<Int>(PrefName.SmartDownloadAhead).coerceIn(1, 5)
+        return episodeArr.drop(currentIdx + 1).take(ahead).filter {
+            !downloadsManager.queryDownload(media.mainName(), it, MediaType.ANIME) &&
+                    !AnimeDownloader.isDownloading(media.id, it)
+        }
     }
 
     private suspend fun resolveSmartDownloadExtractor(
@@ -1291,19 +1289,24 @@ class ExoplayerView : AppCompatActivity(), Player.Listener {
     }
 
     private fun checkSmartDownloadAnime(currentExt: ani.dantotsu.parsers.VideoExtractor) {
-        val nextEpKey = getNextEpisodeKeyForSmartDownload(currentExt) ?: return
+        var nextEpKeys = getNextEpisodeKeysForSmartDownload()
+        // Helper shows a snackbar per blocked call: queue one so it shows once.
+        val blocked = Injekt.get<ani.dantotsu.addons.download.DownloadAddonManager>().extension?.extension == null ||
+                (PrefManager.getVal<Boolean>(PrefName.DownloadWifiOnly) && !ani.dantotsu.isWifiConnected(this))
+        if (blocked) nextEpKeys = nextEpKeys.take(1)
+        if (nextEpKeys.isEmpty()) return
 
         lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val nextEpisode = episodes[nextEpKey] ?: media.anime?.episodes?.getEpisode(nextEpKey) ?: return@launch
+            for (nextEpKey in nextEpKeys) try {
+                val nextEpisode = episodes[nextEpKey] ?: media.anime?.episodes?.getEpisode(nextEpKey) ?: continue
                 val sourceIndex = media.selected?.sourceIndex ?: return@launch
                 val serverName = if (!currentExt.server.offline) currentExt.server.name else media.selected?.server ?: ""
 
-                val extractorToUse = resolveSmartDownloadExtractor(nextEpisode, sourceIndex, serverName) ?: return@launch
+                val extractorToUse = resolveSmartDownloadExtractor(nextEpisode, sourceIndex, serverName) ?: continue
 
                 val sourceName = model.watchSources?.get(sourceIndex)?.name
                 val preferredResolutions = PrefManager.getPreferredDownloadResolutions(sourceName)
-                val bestVideo = findBestVideoForDownload(extractorToUse.videos, preferredResolutions) ?: return@launch
+                val bestVideo = findBestVideoForDownload(extractorToUse.videos, preferredResolutions) ?: continue
 
                 withContext(Dispatchers.Main) {
                     Helper.startAnimeDownloadService(
