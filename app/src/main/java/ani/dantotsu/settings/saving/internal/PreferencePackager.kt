@@ -3,6 +3,7 @@ package ani.dantotsu.settings.saving.internal
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import ani.dantotsu.media.extension.ExtensionTitles
 import ani.dantotsu.settings.saving.PrefManager
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -14,6 +15,9 @@ class PreferencePackager {
     //map one or more preference maps for import/export
 
     companion object {
+
+        private const val PER_TITLE = "PerTitle"
+        private const val EXT_TITLES = "ExtensionTitles"
 
         /**
          * @return a json string of the packed preferences
@@ -46,6 +50,10 @@ class PreferencePackager {
                     // Ignore errors packing sources
                 }
             }
+            // Extra sections use the same {key: {type, value}} shape so older builds just ignore them.
+            fun typed(v: Any) = mapOf("type" to v.javaClass.kotlin.qualifiedName, "value" to v)
+            prefsMap[PER_TITLE] = PrefManager.perTitleEntries().mapValues { typed(it.value) }
+            prefsMap[EXT_TITLES] = mapOf("list" to typed(ExtensionTitles.export()))
             val gson = Gson()
             return gson.toJson(prefsMap)
         }
@@ -115,7 +123,15 @@ class PreferencePackager {
             var success = true
             map.forEach { (location, prefMap) ->
                 val locationEnum = Location.entries.find { it.name == location }
-                if (locationEnum != null) {
+                if (location == PER_TITLE) {
+                    PrefManager.importPerTitle(prefMap)
+                } else if (location == EXT_TITLES) {
+                    try {
+                        (prefMap["list"] as? String)?.let { ExtensionTitles.merge(it) }
+                    } catch (e: Exception) {
+                        success = false
+                    }
+                } else if (locationEnum != null) {
                     if (locationEnum != Location.ExtensionSettings) {
                         if (!PrefManager.importAllPrefs(prefMap, locationEnum)) {
                             success = false

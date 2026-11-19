@@ -440,6 +440,20 @@ object PrefManager {
     fun getAnimeDownloadPreferences(): SharedPreferences =
         animeDownloadsPreferences!!  //needs to be used externally
 
+    // Per-title keys in the Irrelevant file; caches, auth tokens and the downloads folder URI stay out.
+    private val perTitleKey =
+        Regex("Selected-.*|-?[0-9]+_.*|subscriptions|local_mapping_.*|auto_delete_downloads|pref_download_res_.*")
+
+    fun perTitleEntries(): Map<String, Any> =
+        irrelevantPreferences?.all.orEmpty().filter { perTitleKey.matches(it.key) && it.value != null }
+            .mapValues { it.value!! }
+
+    /** Merges into existing values, unlike [importAllPrefs] which clears the location first. */
+    fun importPerTitle(prefs: Map<String, *>) = setCustomVals(
+        prefs.filterKeys { perTitleKey.matches(it) }
+            .mapValues { (_, v) -> if (v is ArrayList<*>) arrayListToSet(v) else v }
+    )
+
     fun exportAllPrefs(prefLocation: List<Location>): String {
         val nonExtensionLocations = prefLocation.filter { it != Location.ExtensionSettings }
         return PreferencePackager.pack(
