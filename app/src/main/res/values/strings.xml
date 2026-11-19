@@ -1526,4 +1526,8 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
         <item quantity="one">Deleted %1$d download</item>
         <item quantity="other">Deleted %1$d downloads</item>
     </plurals>
+    <!-- ext-updates -->
+    <string name="update_all_extensions">Update all</string>
+    <string name="extension_update_check">Check for extension updates</string>
+    <string name="extension_update_check_desc">Check in the background every 12 hours and notify when updates exist</string>
 </resources>

@@ -6,6 +6,13 @@
     android:paddingStart="16dp"
     android:paddingEnd="16dp">
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/updateAllButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/update_all_extensions"
+        android:visibility="gone" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/allNovelExtensionsRecyclerView"
         android:layout_width="match_parent"

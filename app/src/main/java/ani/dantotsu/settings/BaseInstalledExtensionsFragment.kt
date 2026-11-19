@@ -100,6 +100,17 @@ open class BaseInstalledExtensionsFragment : Fragment() {
         ItemTouchHelper(callback).attachToRecyclerView(recyclerView)
     }
 
+    /** Runs the updates one after another (deferred) so system install prompts don't pile up. */
+    fun subscribeExtensionUpdates(
+        context: Context,
+        updates: List<() -> Observable<InstallStep>>,
+        completeIcon: Int = R.drawable.ic_circle_check
+    ) = subscribeExtensionUpdate(
+        context,
+        Observable.concat(updates.map { update -> Observable.defer { update() } }),
+        completeIcon
+    )
+
     fun subscribeExtensionUpdate(
         context: Context,
         observable: Observable<InstallStep>,

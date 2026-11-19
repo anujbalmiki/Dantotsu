@@ -26,6 +26,7 @@ import ani.dantotsu.statusBarHeight
 import ani.dantotsu.themes.ThemeManager
 import ani.dantotsu.util.customAlertDialog
 import eu.kanade.domain.base.BasePreferences
+import eu.kanade.tachiyomi.extension.ExtensionUpdateWorker
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -245,6 +246,17 @@ class SettingsExtensionsActivity : AppCompatActivity() {
                         isChecked = PrefManager.getVal(PrefName.SkipExtensionIcons),
                         switch = { isChecked, _ ->
                             PrefManager.setVal(PrefName.SkipExtensionIcons, isChecked)
+                        }
+                    ),
+                    Settings(
+                        type = 2,
+                        name = getString(R.string.extension_update_check),
+                        desc = getString(R.string.extension_update_check_desc),
+                        icon = R.drawable.ic_round_sync_24,
+                        isChecked = PrefManager.getVal(PrefName.ExtensionUpdateCheck),
+                        switch = { isChecked, _ ->
+                            PrefManager.setVal(PrefName.ExtensionUpdateCheck, isChecked)
+                            ExtensionUpdateWorker.schedule(context, isChecked)
                         }
                     ),
                     Settings(

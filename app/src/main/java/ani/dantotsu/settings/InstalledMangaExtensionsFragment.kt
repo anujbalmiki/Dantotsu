@@ -111,6 +111,13 @@ class InstalledMangaExtensionsFragment : BaseInstalledExtensionsFragment(), Sear
         lifecycleScope.launch {
             mangaExtensionManager.installedExtensionsFlow.collect { extensions ->
                 extensionsAdapter.updateData(sortToMangaSourcesList(extensions))
+                _binding?.updateAllButton?.isVisible = extensions.any { it.hasUpdate }
+            }
+        }
+        binding.updateAllButton.setOnClickListener {
+            val updates = mangaExtensionManager.installedExtensionsFlow.value.filter { it.hasUpdate }
+            if (updates.isNotEmpty()) {
+                subscribeExtensionUpdates(requireContext(), updates.map { { mangaExtensionManager.updateExtension(it) } })
             }
         }
         return binding.root
