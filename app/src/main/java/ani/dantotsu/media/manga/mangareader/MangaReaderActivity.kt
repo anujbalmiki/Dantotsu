@@ -57,6 +57,7 @@ import ani.dantotsu.connections.updateProgress
 import ani.dantotsu.currContext
 import ani.dantotsu.databinding.ActivityMangaReaderBinding
 import ani.dantotsu.dp
+import ani.dantotsu.profile.LocalStats
 import ani.dantotsu.hideSystemBarsExtendView
 import ani.dantotsu.isOnline
 import ani.dantotsu.logError
@@ -206,6 +207,7 @@ class MangaReaderActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        LocalStats.pause()
         flushPageProgress()
         if (autoScrollHelper.isRunning) {
             autoScrollHelper.stop()
@@ -214,6 +216,7 @@ class MangaReaderActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::media.isInitialized) LocalStats.track(false, media.id, media.mainName(), true)
         hideSystemBars()
         if (defaultSettings.autoScroll && ::binding.isInitialized && defaultSettings.layout != PAGED) {
             autoScrollHelper.speed = defaultSettings.autoScrollSpeed
@@ -1466,6 +1469,7 @@ class MangaReaderActivity : AppCompatActivity() {
         PrefManager.setCustomVals(values)
     }
     fun updatePageNumber(pageNumber: Long) {
+        LocalStats.touch()
         var page = pageNumber
         if (directionPagedBT) {
             page = maxChapterPage - pageNumber + 1

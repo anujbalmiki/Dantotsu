@@ -178,6 +178,7 @@ class StatsFragment :
         binding.statisticProgressBar.visibility = View.VISIBLE
         binding.statisticList.visibility = View.GONE
         adapter.clear()
+        adapter.add(LocalStatsItem())
         loadFormatChart(anime)
         loadScoreChart(anime)
         loadStatusChart(anime)
