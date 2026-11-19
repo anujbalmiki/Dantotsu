@@ -1533,4 +1533,7 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
     <string name="stats_line">%1$s: today %2$s, 7 days %3$s, 30 days %4$s, all time %5$s</string>
     <string name="stats_top_titles">Top titles</string>
     <string name="stats_none">Nothing tracked yet</string>
+    <!-- ext-migrate -->
+    <string name="move_to_source">Move to another source</string>
+    <string name="moved_to_source">Moved to %2$s: %1$s</string>
 </resources>
