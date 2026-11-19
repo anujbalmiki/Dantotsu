@@ -1540,4 +1540,9 @@ Non quae tempore quo provident laudantium qui illo dolor vel quia dolor et exerc
     <string name="update_all_extensions">Update all</string>
     <string name="extension_update_check">Check for extension updates</string>
     <string name="extension_update_check_desc">Check in the background every 12 hours and notify when updates exist</string>
+    <!-- failed-downloads -->
+    <string name="failed_downloads_header">Failed</string>
+    <string name="retry_all">Retry all</string>
+    <string name="clear_failed">Clear</string>
+    <string name="retry_opened_title">Could not retry from here, opened the title instead</string>
 </resources>

@@ -50,7 +50,7 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_toStartOf="@id/itemDownloadCancel"
+                    android:layout_toStartOf="@id/itemDownloadRetry"
                     android:orientation="vertical">
 
                     <TextView
@@ -75,6 +75,18 @@
                         android:textColor="?attr/colorOnSurfaceVariant"
                         tools:text="Episode 1 • Anime" />
                 </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/itemDownloadRetry"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_centerVertical="true"
+                    android:layout_toStartOf="@id/itemDownloadCancel"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_round_refresh_24"
+                    android:visibility="gone"
+                    app:tint="?attr/colorPrimary"
+                    tools:ignore="ContentDescription" />
 
                 <ImageButton
                     android:id="@+id/itemDownloadCancel"

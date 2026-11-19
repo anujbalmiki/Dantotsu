@@ -20,6 +20,9 @@ import ani.dantotsu.databinding.ActivityDownloadQueueBinding
 import ani.dantotsu.databinding.ItemDownloadQueueBinding
 import ani.dantotsu.download.DownloadsManager
 import ani.dantotsu.download.DownloadedType
+import ani.dantotsu.download.FailedDownloads
+import ani.dantotsu.media.MediaDetailsActivity
+import ani.dantotsu.snackString
 import ani.dantotsu.download.findValidName
 import ani.dantotsu.download.anime.AnimeDownloaderService
 import ani.dantotsu.download.anime.AnimeServiceDataSingleton
@@ -79,7 +82,11 @@ class DownloadQueueActivity : AppCompatActivity() {
         adapter = DownloadsAdapter(
             coverPathCache = coverPathCache,
             onCancelQueueClick = { item -> cancelTask(item) },
-            onDeleteMediaClick = { title, type -> showDeleteMediaDialog(title, type) }
+            onDeleteMediaClick = { title, type -> showDeleteMediaDialog(title, type) },
+            onRetryFailed = { retryFailed(it) },
+            onRemoveFailed = { FailedDownloads.remove(it.type, it.title, it.item); refreshUI() },
+            onRetryAllFailed = { retryAllFailed() },
+            onClearFailed = { FailedDownloads.clear(); refreshUI() }
         )
 
         binding.downloadQueueRecyclerView.layoutManager = LinearLayoutManager(this)
@@ -242,6 +249,13 @@ class DownloadQueueActivity : AppCompatActivity() {
             })
         }
 
+        // Failed downloads of this type, kept across restarts
+        val failed = FailedDownloads.all().filter { it.type == type }
+        if (failed.isNotEmpty()) {
+            listItems.add(DownloadsListItem.FailedHeader(failed.size, type == MediaType.MANGA))
+            listItems.addAll(failed.map { DownloadsListItem.Failed(it) })
+        }
+
         // 2. Downloaded Media Items (CRUD & Insights)
         val downloadsManager = Injekt.get<DownloadsManager>()
         val downloadedTypes = when (type) {
@@ -358,6 +372,36 @@ class DownloadQueueActivity : AppCompatActivity() {
         startUpdating()
     }
 
+    // Manga re-resolves pages and requeues; anything else (or any failure) opens the title page.
+    private fun retryFailed(entry: FailedDownloads.Entry) {
+        lifecycleScope.launch {
+            val queued = entry.type == MediaType.MANGA && try {
+                withContext(Dispatchers.IO) { FailedDownloads.retryManga(applicationContext, entry) }
+            } catch (_: Exception) {
+                false
+            }
+            if (!queued) {
+                snackString(R.string.retry_opened_title)
+                startActivity(Intent(this@DownloadQueueActivity, MediaDetailsActivity::class.java).putExtra("mediaId", entry.mediaId))
+            }
+            refreshUI()
+        }
+    }
+
+    private fun retryAllFailed() {
+        val type = getSelectedMediaType()
+        lifecycleScope.launch {
+            // entries that cannot be re-resolved stay in the list for a per-item retry
+            for (entry in FailedDownloads.all().filter { it.type == type }) {
+                try {
+                    withContext(Dispatchers.IO) { FailedDownloads.retryManga(applicationContext, entry) }
+                } catch (_: Exception) {
+                }
+            }
+            refreshUI()
+        }
+    }
+
     private fun showDeleteMediaDialog(title: String, type: MediaType) {
         customAlertDialog().apply {
             setTitle("Delete Downloads")
@@ -445,6 +489,8 @@ sealed class QueueItem {
 sealed class DownloadsListItem {
     data class Header(val title: String) : DownloadsListItem()
     data class QueueItemWrapper(val queueItem: QueueItem, val progress: Int?) : DownloadsListItem()
+    data class FailedHeader(val count: Int, val canRetryAll: Boolean) : DownloadsListItem()
+    data class Failed(val entry: FailedDownloads.Entry) : DownloadsListItem()
     data class DownloadedMediaItem(
         val title: String,
         val type: MediaType,
@@ -459,6 +505,9 @@ class DownloadsDiffCallback : DiffUtil.ItemCallback<DownloadsListItem>() {
             oldItem is DownloadsListItem.Header && newItem is DownloadsListItem.Header -> oldItem.title == newItem.title
             oldItem is DownloadsListItem.QueueItemWrapper && newItem is DownloadsListItem.QueueItemWrapper ->
                 oldItem.queueItem.type == newItem.queueItem.type && oldItem.queueItem.uniqueId == newItem.queueItem.uniqueId
+            oldItem is DownloadsListItem.FailedHeader && newItem is DownloadsListItem.FailedHeader -> true
+            oldItem is DownloadsListItem.Failed && newItem is DownloadsListItem.Failed ->
+                oldItem.entry.matches(newItem.entry.type, newItem.entry.title, newItem.entry.item)
             oldItem is DownloadsListItem.DownloadedMediaItem && newItem is DownloadsListItem.DownloadedMediaItem ->
                 oldItem.title == newItem.title && oldItem.type == newItem.type
             else -> false
@@ -473,13 +522,19 @@ class DownloadsDiffCallback : DiffUtil.ItemCallback<DownloadsListItem>() {
 class DownloadsAdapter(
     private val coverPathCache: Map<String, String?>,
     private val onCancelQueueClick: (QueueItem) -> Unit,
-    private val onDeleteMediaClick: (String, MediaType) -> Unit
+    private val onDeleteMediaClick: (String, MediaType) -> Unit,
+    private val onRetryFailed: (FailedDownloads.Entry) -> Unit,
+    private val onRemoveFailed: (FailedDownloads.Entry) -> Unit,
+    private val onRetryAllFailed: () -> Unit,
+    private val onClearFailed: () -> Unit
 ) : ListAdapter<DownloadsListItem, RecyclerView.ViewHolder>(DownloadsDiffCallback()) {
 
     companion object {
         private const val TYPE_HEADER = 0
         private const val TYPE_QUEUE = 1
         private const val TYPE_MEDIA = 2
+        private const val TYPE_FAILED_HEADER = 3
+        private const val TYPE_FAILED = 4
     }
 
     override fun getItemViewType(position: Int): Int {
@@ -487,6 +542,8 @@ class DownloadsAdapter(
             is DownloadsListItem.Header -> TYPE_HEADER
             is DownloadsListItem.QueueItemWrapper -> TYPE_QUEUE
             is DownloadsListItem.DownloadedMediaItem -> TYPE_MEDIA
+            is DownloadsListItem.FailedHeader -> TYPE_FAILED_HEADER
+            is DownloadsListItem.Failed -> TYPE_FAILED
         }
     }
 
@@ -501,6 +558,8 @@ class DownloadsAdapter(
                 val binding = ItemDownloadQueueBinding.inflate(inflater, parent, false)
                 QueueViewHolder(binding)
             }
+            TYPE_FAILED_HEADER -> FailedHeaderViewHolder(inflater.inflate(R.layout.item_failed_header, parent, false))
+            TYPE_FAILED -> FailedViewHolder(ItemDownloadQueueBinding.inflate(inflater, parent, false))
             else -> {
                 val binding = ItemDownloadQueueBinding.inflate(inflater, parent, false)
                 MediaViewHolder(binding)
@@ -552,6 +611,35 @@ class DownloadsAdapter(
                     onCancelQueueClick(queueItem)
                 }
             }
+            is FailedHeaderViewHolder -> {
+                val header = item as DownloadsListItem.FailedHeader
+                val v = holder.itemView
+                v.findViewById<TextView>(R.id.failedHeaderTitle).text =
+                    "${v.context.getString(R.string.failed_downloads_header)} (${header.count})"
+                v.findViewById<View>(R.id.failedHeaderRetryAll).apply {
+                    visibility = if (header.canRetryAll) View.VISIBLE else View.GONE
+                    setOnClickListener { onRetryAllFailed() }
+                }
+                v.findViewById<View>(R.id.failedHeaderClear).setOnClickListener { onClearFailed() }
+            }
+            is FailedViewHolder -> {
+                val entry = (item as DownloadsListItem.Failed).entry
+                val b = holder.binding
+                b.itemDownloadTitle.text = entry.title
+                b.itemDownloadSubtitle.text = "${entry.item} • ${entry.error}"
+                val coverPath = coverPathCache[entry.title]
+                if (coverPath != null) {
+                    b.itemDownloadImage.loadImage(coverPath)
+                    b.itemDownloadImageCard.visibility = View.VISIBLE
+                } else {
+                    b.itemDownloadImageCard.visibility = View.GONE
+                }
+                b.itemDownloadProgressLayout.visibility = View.GONE
+                b.itemDownloadRetry.visibility = View.VISIBLE
+                b.itemDownloadRetry.setOnClickListener { onRetryFailed(entry) }
+                b.itemDownloadCancel.setImageResource(R.drawable.ic_circle_cancel)
+                b.itemDownloadCancel.setOnClickListener { onRemoveFailed(entry) }
+            }
             is MediaViewHolder -> {
                 val media = item as DownloadsListItem.DownloadedMediaItem
                 holder.binding.itemDownloadTitle.text = media.title
@@ -585,5 +673,7 @@ class DownloadsAdapter(
 
     class HeaderViewHolder(view: View) : RecyclerView.ViewHolder(view)
     class QueueViewHolder(val binding: ItemDownloadQueueBinding) : RecyclerView.ViewHolder(binding.root)
+    class FailedHeaderViewHolder(view: View) : RecyclerView.ViewHolder(view)
+    class FailedViewHolder(val binding: ItemDownloadQueueBinding) : RecyclerView.ViewHolder(binding.root)
     class MediaViewHolder(val binding: ItemDownloadQueueBinding) : RecyclerView.ViewHolder(binding.root)
 }

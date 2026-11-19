@@ -20,6 +20,7 @@ import androidx.documentfile.provider.DocumentFile
 import ani.dantotsu.R
 import ani.dantotsu.connections.crashlytics.CrashlyticsInterface
 import ani.dantotsu.download.DownloadedType
+import ani.dantotsu.download.FailedDownloads
 import ani.dantotsu.download.DownloadsManager
 import ani.dantotsu.download.DownloadsManager.Companion.getSubDirectory
 import ani.dantotsu.media.Media
@@ -330,6 +331,8 @@ class MangaDownloaderService : Service() {
                             )?.let { decodeFullSize(it) }
                             if (bitmap == null) {
                                 snackString("${task.chapter} - Retrying to download page ${index.ofLength(3)}, attempt ${retryCount + 1}.")
+                                // backoff 1s, 2s, 4s, then 5s so a flaky host is not hammered
+                                if (retryCount + 1 < task.retries) delay(minOf(1000L shl retryCount.coerceAtMost(3), 5000L))
                             }
                             retryCount++
                         }
@@ -400,11 +403,23 @@ class MangaDownloaderService : Service() {
                         scanlator = task.scanlator,
                     )
                 )
+                FailedDownloads.remove(MediaType.MANGA, task.title, task.chapter)
                 broadcastDownloadFinished(task.uniqueName)
                 broadcastDownloadFinished(task.chapter)
                 snackString("${task.title} - ${task.chapter} Download finished")
             }
         } catch (e: Exception) {
+            // a user cancel is not a failure
+            val mediaId = task.sourceMedia?.id
+            if (e !is kotlinx.coroutines.CancellationException && mediaId != null) {
+                FailedDownloads.add(
+                    FailedDownloads.Entry(
+                        MediaType.MANGA, task.title, task.chapter, mediaId, task.sourceName ?: "",
+                        task.sourceLang, task.chapterUrl ?: "", task.scanlator,
+                        error = e.message?.take(200) ?: e.javaClass.simpleName
+                    )
+                )
+            }
             Logger.log("Exception while downloading file: ${e.message}")
             snackString("Exception while downloading file: ${e.message}")
             Injekt.get<CrashlyticsInterface>().logException(e)
@@ -565,6 +580,10 @@ class MangaDownloaderService : Service() {
         val sourceMedia: Media? = null,
         val retries: Int = 2,
         val simultaneousDownloads: Int = 2,
+        // kept so a failed chapter can be re-resolved and retried later
+        val chapterUrl: String? = null,
+        val sourceName: String? = null,
+        val sourceLang: Int = 0,
     ) {
         val uniqueName: String
             get() = "$chapter-$scanlator"
