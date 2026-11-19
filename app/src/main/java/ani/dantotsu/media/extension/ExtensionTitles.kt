@@ -68,6 +68,17 @@ object ExtensionTitles {
 
     fun get(id: Int) = _all.value.find { it.id == id }
 
+    fun export(): String = json.encodeToString(serializer, _all.value)
+
+    /** Backup restore: adds missing titles, and for known ones keeps the more recently opened. */
+    fun merge(backup: String) {
+        val incoming = json.decodeFromString(serializer, backup)
+        val current = _all.value.associateBy { it.id }
+        val merged = current + incoming.filter { (current[it.id]?.lastOpened ?: -1) < it.lastOpened }
+            .associateBy { it.id }
+        save(merged.values.sortedByDescending { it.lastOpened })
+    }
+
     fun remove(id: Int) = save(_all.value.filterNot { it.id == id })
 
     fun setProgress(id: Int, progress: Int) {
