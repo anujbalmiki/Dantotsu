@@ -1,7 +1,8 @@
 name: Build fork APK
 
 # Builds the same variant the upstream beta workflow ships (googleAlpha, application id
-# ani.dantotsu.beta) and uploads the APKs as a run artifact. No Discord/Telegram, no releases.
+# ani.dantotsu.beta) and uploads the APKs as a run artifact. A manual run with "release" ticked
+# also publishes them as the Latest GitHub release, so nothing has to pass through a local PC.
 
 on:
   push:
@@ -11,10 +12,26 @@ on:
     paths-ignore:
       - '**/*.md'
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish as the Latest release'
+        type: boolean
+        default: false
+      title:
+        description: 'Release title'
+        type: string
+        default: 'Fork build'
+      notes:
+        description: 'Release notes (markdown)'
+        type: string
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -79,3 +96,20 @@ jobs:
           # APKs are already zipped; skipping recompression speeds the upload.
           compression-level: 0
           retention-days: 30
+
+      - name: Publish release
+        if: inputs.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ inputs.title }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          if [ ! -s "$GITHUB_WORKSPACE/key.keystore" ]; then
+            echo "::error::No keystore secret set. Refusing to release a debug-signed build; it would not install over the previous one."
+            exit 1
+          fi
+          DAY=$(TZ=Asia/Kolkata date +%Y%m%d)
+          N=$(gh release list --repo "$GITHUB_REPOSITORY" -L 100 --json tagName -q ".[].tagName" | grep -c "^r$DAY-" || true)
+          TAG="r$DAY-$((N + 1))"
+          APKS=app/build/outputs/apk/google/alpha
+          gh release create "$TAG"             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --latest             --title "$TITLE"             --notes "$NOTES"             "$APKS/app-google-arm64-v8a-alpha.apk"             "$APKS/app-google-universal-alpha.apk"
