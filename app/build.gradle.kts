@@ -66,8 +66,11 @@ android {
         abi {
             isEnable = true
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-            isUniversalApk = true
+            // fork: -Pabis=arm64-v8a (comma list) limits split APKs to speed up CI and local builds
+            val abis = (project.findProperty("abis") as String?)?.split(",")
+                ?: listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            include(*abis.toTypedArray())
+            isUniversalApk = project.findProperty("noUniversal") == null
         }
     }
 

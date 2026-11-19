@@ -33,15 +33,9 @@ jobs:
           distribution: 'temurin'
           java-version: 21
 
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: v1-${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            v1-${{ runner.os }}-gradle-
+      # Caches dependencies and the Gradle build cache, so unchanged modules are not recompiled.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
@@ -58,14 +52,14 @@ jobs:
         run: |
           if [ -s "$GITHUB_WORKSPACE/key.keystore" ]; then
             echo "Signing with the repository keystore"
-            ./gradlew assembleGoogleAlpha --no-daemon --stacktrace \
+            ./gradlew assembleGoogleAlpha --no-daemon --stacktrace --build-cache -Pabis=arm64-v8a \
               -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/key.keystore \
               -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
               -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
               -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}"
           else
             echo "No keystore secret set; falling back to the throwaway debug key"
-            ./gradlew assembleGoogleAlpha --no-daemon --stacktrace
+            ./gradlew assembleGoogleAlpha --no-daemon --stacktrace --build-cache -Pabis=arm64-v8a
           fi
 
       - name: Checksums
@@ -78,6 +72,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dantotsu-fork-apk-${{ github.sha }}
-          path: app/build/outputs/apk/google/alpha/*.apk
+          path: |
+            app/build/outputs/apk/google/alpha/*arm64-v8a*.apk
+            app/build/outputs/apk/google/alpha/*universal*.apk
           if-no-files-found: error
+          # APKs are already zipped; skipping recompression speeds the upload.
+          compression-level: 0
           retention-days: 30
