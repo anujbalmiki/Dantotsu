@@ -213,7 +213,7 @@ class SettingsCommonActivity : AppCompatActivity() {
                 editText.text
                     ?.toString()
                     ?.trim()
-                    ?.toCharArray(password)
+                    ?.take(16)?.toCharArray(password)
                 dialog.dismiss()
                 callback(password)
             } else {

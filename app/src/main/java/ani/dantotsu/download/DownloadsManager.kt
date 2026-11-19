@@ -494,9 +494,8 @@ class DownloadsManager(private val context: Context) {
             val withoutSuffixMatch = list.find {
                 it.isDirectory && it.name?.findValidName()?.replace(Regex("\\s*\\(\\d+\\)$"), "").equals(baseNameWithoutSuffix, ignoreCase = true)
             }
-            if (withoutSuffixMatch != null) return withoutSuffixMatch
-
-            return list.find { it.isDirectory && it.name != null && validName.compareName(it.name!!) }
+            // no fuzzy match: "X Season 2" must not resolve to "X Season 3"
+            return withoutSuffixMatch
         }
 
         private const val RATIO_THRESHOLD = 95

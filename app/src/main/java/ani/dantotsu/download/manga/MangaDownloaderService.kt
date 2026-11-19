@@ -133,6 +133,11 @@ class MangaDownloaderService : Service() {
         runCatching { unregisterReceiver(cancelReceiver) }
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android 15 caps dataSync services at 6h; stop cleanly instead of crashing
+        stopSelf()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         snackString("Download started")
         startForegroundNotification()
@@ -334,8 +339,15 @@ class MangaDownloaderService : Service() {
                             throw Exception("${task.chapter} - Unable to download all pages after $retryCount attempts. Try again.")
                         }
 
-                        val writtenBytes = saveToDisk("${index.ofLength(3)}.jpg", outputDir, bitmap)
-                        bitmap.recycle()
+                        val writtenBytes = try {
+                            saveToDisk("${index.ofLength(3)}.jpg", outputDir, bitmap)
+                        } catch (e: Exception) {
+                            // a page that did not reach disk fails the chapter, no partial chapter kept
+                            outputDir.deleteRecursively(this@MangaDownloaderService, false)
+                            throw e
+                        } finally {
+                            bitmap.recycle()
+                        }
                         downloadedBytes += writtenBytes
                         farthest++
 
@@ -414,14 +426,15 @@ class MangaDownloaderService : Service() {
 
             file.openOutputStream(this, false).use { outputStream ->
                 if (outputStream == null) throw Exception("Output stream is null")
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)) {
+                    throw Exception("Image compression failed")
+                }
             }
             return file.length()
         } catch (e: Exception) {
             println("Exception while saving image: ${e.message}")
-            snackString("Exception while saving image: ${e.message}")
             Injekt.get<CrashlyticsInterface>().logException(e)
-            return 0L
+            throw e
         }
     }
 

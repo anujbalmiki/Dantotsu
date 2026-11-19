@@ -96,11 +96,6 @@ class AnimeDownloaderService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        if (ffExtension == null) {
-            toast(getString(R.string.download_addon_not_found))
-            stopSelf()
-            return
-        }
         notificationManager = NotificationManagerCompat.from(this)
         builder =
             NotificationCompat.Builder(this, Notifications.CHANNEL_DOWNLOADER_PROGRESS).apply {
@@ -110,6 +105,13 @@ class AnimeDownloaderService : Service() {
                 setOnlyAlertOnce(true)
                 setProgress(100, 0, false)
             }
+        if (ffExtension == null) {
+            // must call startForeground before stopping, the caller used startForegroundService
+            toast(getString(R.string.download_addon_not_found))
+            startForegroundNotification()
+            stopSelf()
+            return
+        }
         startForegroundNotification()
         ContextCompat.registerReceiver(
             this,
@@ -141,9 +143,18 @@ class AnimeDownloaderService : Service() {
         runCatching { unregisterReceiver(cancelReceiver) }
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android 15 caps dataSync services at 6h; stop cleanly instead of crashing
+        stopSelf()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        snackString("Download started")
         startForegroundNotification()
+        if (ffExtension == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        snackString("Download started")
         AnimeServiceDataSingleton.isServiceRunning = true
         startQueueProcessing()
         return START_NOT_STICKY
@@ -587,9 +598,13 @@ class AnimeDownloaderService : Service() {
         broadcastDownloadFinished(task.episode, task.sourceMedia?.id, size)
     }
 
+    private val mediaInfoMutex = Mutex()
+
     private fun CoroutineScope.saveMediaInfo(task: AnimeDownloadTask, directory: DocumentFile) {
         launch(Dispatchers.IO) {
             try {
+              // parallel episodes share media.json; serialize the delete+write
+              mediaInfoMutex.withLock {
                 directory.findFile("media.json")?.forceDelete(this@AnimeDownloaderService)
                 val file = directory.createFile("application/json", "media.json")
                     ?: return@launch
@@ -650,6 +665,7 @@ class AnimeDownloaderService : Service() {
                         }
                     }
                 }
+              }
             } catch (e: Exception) {
                 Logger.log("Failed to save media info: ${e.message}")
                 e.printStackTrace()
@@ -789,7 +805,7 @@ class AnimeDownloaderService : Service() {
 object AnimeServiceDataSingleton {
     var video: Video? = null
     var downloadQueue: Queue<AnimeDownloaderService.AnimeDownloadTask> = ConcurrentLinkedQueue()
-    val currentTasks = java.util.Collections.synchronizedList(mutableListOf<AnimeDownloaderService.AnimeDownloadTask>())
+    val currentTasks = java.util.concurrent.CopyOnWriteArrayList<AnimeDownloaderService.AnimeDownloadTask>()
     val progress = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     @Volatile
@@ -797,10 +813,10 @@ object AnimeServiceDataSingleton {
 }
 
 object AnimeDownloader{
-    private val activeDownloads = mutableMapOf<Int, MutableSet<String>>()
+    private val activeDownloads = java.util.concurrent.ConcurrentHashMap<Int, MutableSet<String>>()
 
     fun startDownload(mediaId: Int, episodeNumber: String) {
-        activeDownloads.getOrPut(mediaId) { mutableSetOf() }.add(episodeNumber)
+        activeDownloads.getOrPut(mediaId) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(episodeNumber)
     }
     fun stopDownload(mediaId: Int, episodeNumber: String) {
         activeDownloads[mediaId]?.remove(episodeNumber)

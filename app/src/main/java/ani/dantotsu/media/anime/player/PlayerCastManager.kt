@@ -375,7 +375,7 @@ class PlayerCastManager(
         video?.file?.headers?.let { headers.putAll(it) }
 
         val proxyServer = CastProxyServerService.currentProxyServer
-            ?: CastProxyServer(contentResolver = activity.contentResolver, ipAddress = CastProxyServer.getLocalIpAddress())
+            ?: CastProxyServer(contentResolver = activity.contentResolver, ipAddress = CastProxyServer.getLocalIpAddress(), allowedFileDir = activity.cacheDir)
 
         val proxiedUri = if (uriStr.startsWith("content://")) {
             proxyServer.getLocalUrl(uriStr).toUri()

@@ -346,7 +346,7 @@ class SettingsDataActivity : AppCompatActivity() {
                 icon = R.drawable.backup_restore,
                 onClick = {
                     StoragePermissions.downloadsPermission(context)
-                    val exportableLocations = Location.entries.filter { it.exportable }
+                    val exportableLocations = Location.entries.filter { it.exportable && it != Location.Protected }
                     val timestampStr = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
                     savePrefsToDownloads(
                         "Dantotsu_${timestampStr}",

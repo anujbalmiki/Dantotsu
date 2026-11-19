@@ -37,20 +37,9 @@ class CastProxyServerService : Service() {
             baseClient = OkHttpClient(),
             contentResolver = contentResolver,
             ipAddress = address,
-            port = CastProxyServer.DEFAULT_PORT
+            port = CastProxyServer.DEFAULT_PORT,
+            allowedFileDir = cacheDir
         )
-
-        try {
-            server?.start()
-            Logger.log("CastProxyServerService: Started proxy on $address:${CastProxyServer.DEFAULT_PORT}")
-        } catch (e: Exception) {
-            Logger.log("CastProxyServerService: Failed to start proxy server: ${e.message}")
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
-        _isRunning.update { true }
-        currentProxyServer = server
 
         val stopIntent = Intent(this, CastProxyServerService::class.java).apply {
             action = ACTION_STOP
@@ -82,6 +71,18 @@ class CastProxyServerService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+
+        try {
+            server?.start()
+            Logger.log("CastProxyServerService: Started proxy on $address:${CastProxyServer.DEFAULT_PORT}")
+        } catch (e: Exception) {
+            Logger.log("CastProxyServerService: Failed to start proxy server: ${e.message}")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        _isRunning.update { true }
+        currentProxyServer = server
 
         return START_STICKY
     }

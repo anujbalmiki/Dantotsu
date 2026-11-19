@@ -70,6 +70,11 @@ class TorrentServerService : Service() {
         }
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android 15 caps dataSync services at 6h; stop cleanly instead of crashing
+        stopServer()
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         Logger.log("TorrentServerService: App swiped away from recents. Stopping server.")
         try {

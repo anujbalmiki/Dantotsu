@@ -30,6 +30,7 @@ class CastProxyServer(
     private val contentResolver: ContentResolver,
     private val ipAddress: String,
     private val port: Int = DEFAULT_PORT,
+    private val allowedFileDir: java.io.File? = null,
 ) : NanoHTTPD(port) {
 
     private fun OkHttpClient.Builder.ignoreAllSSLErrors(): OkHttpClient.Builder {
@@ -56,6 +57,10 @@ class CastProxyServer(
 
     override fun serve(session: IHTTPSession?): Response? {
         val uri = session?.uri ?: return super.serve(session)
+        // Per-process token: other LAN devices can't use the proxy without a handed-out URL
+        if (session.parameters["token"]?.firstOrNull() != TOKEN) {
+            return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Forbidden")
+        }
         return when {
             uri.startsWith("/local") -> localServe(session)
             uri.startsWith("/proxy") -> proxyServe(session)
@@ -90,6 +95,19 @@ class CastProxyServer(
             Logger.log("CastProxyServer: Failed to parse uri $url: ${e.message}")
             return badRequest("Invalid uri")
         }
+        // content:// always; file:// only inside allowedFileDir (cache), never other private app files
+        val allowed = when (uri.scheme) {
+            "content" -> true
+            "file" -> allowedFileDir != null && (try {
+                val root = allowedFileDir.canonicalFile
+                val target = java.io.File(uri.path ?: "").canonicalFile
+                target.path.startsWith(root.path + java.io.File.separator)
+            } catch (e: Exception) {
+                false
+            })
+            else -> false
+        }
+        if (!allowed) return badRequest("Unsupported uri")
         val afd = try {
             contentResolver.openAssetFileDescriptor(uri, "r")
                 ?: return notFound("Unable to open file")
@@ -306,6 +324,7 @@ class CastProxyServer(
             addPathSegment("proxy")
             addQueryParameter("url", targetUrl)
             addQueryParameter("header", headersJson)
+            addQueryParameter("token", TOKEN)
         }.build().toString()
     }
 
@@ -313,6 +332,7 @@ class CastProxyServer(
         return "http://$ipAddress:$port".toHttpUrl().newBuilder().apply {
             addPathSegment("local")
             addQueryParameter("url", localUri)
+            addQueryParameter("token", TOKEN)
         }.build().toString()
     }
 
@@ -326,6 +346,8 @@ class CastProxyServer(
 
     companion object {
         const val DEFAULT_PORT = 19876
+        private val TOKEN = ByteArray(16).also { SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }
         private val ATTRIBUTE_REGEX = Regex("""URI="([^"]+)"""")
         private val HLS_TAGS = listOf("#EXT-X-KEY", "#EXT-X-MEDIA", "#EXT-X-I-FRAME-STREAM-INF")
         private val DASH_ATTRS = listOf("initialization", "media", "index")

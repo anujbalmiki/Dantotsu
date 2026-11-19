@@ -64,6 +64,8 @@ class PreferencePackager {
             val deserializedMap = mutableMapOf<String, Map<String, Any?>>()
 
             rawPrefsMap.forEach { (prefName, prefValueMap) ->
+                // Skip locations that are never exported (a crafted file could target them)
+                if (Location.entries.any { it.name == prefName && !it.exportable }) return@forEach
                 val innerMap = mutableMapOf<String, Any?>()
 
                 prefValueMap.forEach { (key, typeValueMap) ->

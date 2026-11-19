@@ -117,7 +117,7 @@ class LoginFragment : Fragment() {
             setPosButton(R.string.ok) {
                 val editText = dialogView.userAgentTextBox
                 if (editText.text?.isNotBlank() == true) {
-                    editText.text?.toString()?.trim()?.toCharArray(password)
+                    editText.text?.toString()?.trim()?.take(16)?.toCharArray(password)
                     callback(password)
                 } else {
                     toast("Password cannot be empty")

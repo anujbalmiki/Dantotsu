@@ -1,5 +1,6 @@
 package ani.dantotsu.connections.discord
 
+import ani.dantotsu.BuildConfig
 import android.annotation.SuppressLint
 import android.app.Application.getProcessName
 import android.content.Intent
@@ -50,7 +51,7 @@ class Login : AppCompatActivity() {
             settings.databaseEnabled = true
             settings.domStorageEnabled = true
         }
-        WebView.setWebContentsDebuggingEnabled(true)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)

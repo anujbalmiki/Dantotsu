@@ -60,6 +60,11 @@ object Helper {
             return
         }
 
+        if (Injekt.get<ani.dantotsu.addons.download.DownloadAddonManager>().extension?.extension == null) {
+            snackString(context.getString(R.string.download_addon_not_found))
+            return
+        }
+
         if (!isNotificationPermissionGranted(context)) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && context is Activity) {
                 ActivityCompat.requestPermissions(

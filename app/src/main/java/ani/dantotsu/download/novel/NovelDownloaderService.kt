@@ -114,6 +114,11 @@ class NovelDownloaderService : Service() {
         runCatching { unregisterReceiver(cancelReceiver) }
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android 15 caps dataSync services at 6h; stop cleanly instead of crashing
+        stopSelf()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         snackString("Download started")
         startForegroundNotification()

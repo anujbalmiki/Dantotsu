@@ -1,5 +1,6 @@
 package ani.dantotsu.others.webview
 
+import ani.dantotsu.BuildConfig
 import android.annotation.SuppressLint
 import android.app.Application
 import android.os.Build
@@ -44,7 +45,7 @@ class CookieCatcher : AppCompatActivity() {
         val ua = headers["User-Agent"] ?: NetworkHelper.defaultUserAgentProvider()
         webView.setUserAgent(ua)
 
-        WebView.setWebContentsDebuggingEnabled(true)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                 super.onPageFinished(view, finishedUrl)

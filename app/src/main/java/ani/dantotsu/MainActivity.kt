@@ -595,7 +595,21 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this, ani.dantotsu.connections.anilist.UrlMedia::class.java).setData(uri))
                 return
             }
-            handleSettingsFileImport(uri, intent)
+            // Never import settings from an external intent without asking
+            customAlertDialog().apply {
+                setTitle("Import settings?")
+                setMessage("Another app asked Dantotsu to import a settings file. This replaces your current settings.")
+                setPosButton(R.string.yes) {
+                    try {
+                        handleSettingsFileImport(uri, intent)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        toast("Error importing settings")
+                    }
+                }
+                setNegButton(R.string.cancel)
+                show()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             toast("Error importing settings")
@@ -617,7 +631,7 @@ class MainActivity : AppCompatActivity() {
             setPosButton(R.string.yes) {
                 val editText = dialogView.userAgentTextBox
                 if (editText.text?.isNotBlank() == true) {
-                    editText.text?.toString()?.trim()?.toCharArray(password)
+                    editText.text?.toString()?.trim()?.take(16)?.toCharArray(password)
                     callback(password)
                 } else {
                     toast("Password cannot be empty")
